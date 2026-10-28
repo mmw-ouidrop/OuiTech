@@ -33,7 +33,7 @@
  *   - photos : s'additionnent (identifiées par mediaId), jamais en conflit ;
  *   - champs ajoutés par les techniciens : s'additionnent, suppression douce.
  *
- *  REQUÊTE  POST { action:"syncReport", appToken,
+ *  REQUÊTE  POST { action:"syncReport", session,
  *    notionPageId, reference?,
  *    clientId,                       identifiant stable de l'appareil
  *    author: { firstName, lastName },
@@ -311,7 +311,7 @@ function cacheGetRev_(pageId) {
   return v === null ? null : Number(v);
 }
 
-// Seules les pages de la base Interventions sont modifiables (l'appToken ne doit
+// Seules les pages de la base Interventions sont modifiables (une session valide ne doit
 // pas permettre d'écrire ailleurs dans l'espace de travail). Résultat mis en cache.
 function assertPageInDatabase_(pageId) {
   const cache = CacheService.getScriptCache();

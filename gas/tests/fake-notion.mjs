@@ -4,12 +4,15 @@
 // Ce n’est pas le vrai Notion : seule la fonction testNotionCapabilities() (Apps Script) vérifie votre espace de travail.
 // (fonction testNotionCapabilities dans Apps Script) valide le contrat réel.
 import vm from 'node:vm';
+import crypto from 'node:crypto';
 import assert from 'node:assert/strict';
 
 export const ROOT = 'ROOT_FOLDER_ID_0000000000000000';
 export const PAGE = 'aaaaaaaabbbbccccddddeeeeeeeeeeee';
 export const DB = '11111111222233334444555555555555';
 export const TOKEN = 'tok_test';
+export const PW_TECH = 'tech-pass-12345';
+export const PW_SUPPORT = 'support-pass-67890';
 export const PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 
 const dash = (h) => `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
@@ -20,7 +23,7 @@ export function makeWorld() {
   const w = {
     calls: [], blocks: {}, kids: {}, drive: {}, folders: {}, uploads: {}, seq: 0, now: Date.parse('2026-10-20T08:00:00Z'),
     positionMode: 'both',          // both | after-only | none : ce que « Notion » accepte
-    pageDb: null, failNext: null, pageSize: 100, props: {}
+    pageDb: null, failNext: null, pageSize: 100, props: {}, stored: {}
   };
   w.id = () => dash(String(++w.seq).padStart(32, '0'));
   w.fid = (p) => p + '_' + String(++w.seq).padStart(20, '0');
@@ -151,7 +154,9 @@ export function makeWorld() {
           const start = Number(q.get('start_cursor') || 0);
           const slice = live.slice(start, start + size);
           const more = start + size < live.length;
-          return res(200, { results: slice.map((i) => w.blocks[i]), has_more: more, next_cursor: more ? String(start + size) : null });
+          // comme Notion : `has_children` est renseigné sur chaque bloc renvoyé
+          const out = slice.map((i) => { const b = w.blocks[i]; b.has_children = w.kids[i].some((k) => !w.blocks[k].archived); return b; });
+          return res(200, { results: out, has_more: more, next_cursor: more ? String(start + size) : null });
         }
         if (method === 'PATCH') {
           assert.ok(Array.isArray(body.children) && body.children.length >= 1 && body.children.length <= 100, '1 à 100 enfants par requête');
@@ -234,7 +239,8 @@ export function makeWorld() {
   const newBlob = (bytes, mime, name) => ({
     bytes, mime, name,
     getName() { return this.name; }, setName(n) { this.name = n; return this; },
-    getContentType() { return this.mime; }, getBytes() { return this.bytes; }
+    getContentType() { return this.mime; }, getBytes() { return this.bytes; },
+    getDataAsString() { return Buffer.from(this.bytes.map((b) => (b < 0 ? b + 256 : b))).toString('utf8'); }
   });
 
   let cache = {};
@@ -243,7 +249,10 @@ export function makeWorld() {
   const ctx = vm.createContext({
     console, Logger: { log() {} }, UrlFetchApp,
     ContentService: { MimeType: { JSON: 'json' }, createTextOutput: (s) => ({ s, setMimeType() { return this; }, getContent() { return s; } }) },
-    PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => ({ NOTION_TOKEN: TOKEN, NOTION_DB_ID: DB, DRIVE_FOLDER_ID: ROOT, APP_TOKEN: 'secret', TEST_PAGE_ID: PAGE, ...w.props }[k] ?? null) }) },
+    PropertiesService: { getScriptProperties: () => ({
+      getProperty: (k) => ({ NOTION_TOKEN: TOKEN, NOTION_DB_ID: DB, DRIVE_FOLDER_ID: ROOT, PASSWORD_TECH: PW_TECH, PASSWORD_SUPPORT: PW_SUPPORT, TEST_PAGE_ID: PAGE, ...w.stored, ...w.props }[k] ?? null),
+      setProperty: (k, v) => { w.stored[k] = String(v); }
+    }) },
     CacheService: { getScriptCache: () => ({
       get: (k) => cache[k] ?? null,
       put: (k, v) => { assert.ok(Buffer.byteLength(String(v)) <= 100 * 1024, 'CacheService : 100 Ko maximum par valeur'); cache[k] = String(v); },
@@ -252,7 +261,12 @@ export function makeWorld() {
     }) },
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
     Utilities: {
-      sleep() {}, newBlob, base64Decode: (s) => { if (/[^A-Za-z0-9+/=]/.test(s)) throw new Error('bad b64'); return [...Buffer.from(s, 'base64')]; },
+      sleep() {}, newBlob, getUuid: () => crypto.randomUUID(),
+      // comme Apps Script : l'empreinte est un tableau d'octets SIGNÉS ; base64 « web-safe » avec bourrage
+      computeHmacSha256Signature: (data, key) => [...crypto.createHmac('sha256', key).update(String(data)).digest()].map((b) => (b > 127 ? b - 256 : b)),
+      base64EncodeWebSafe: (x) => (typeof x === 'string' ? Buffer.from(x, 'utf8') : Buffer.from(x.map((b) => (b < 0 ? b + 256 : b)))).toString('base64').replace(/\+/g, '-').replace(/\//g, '_'),
+      base64DecodeWebSafe: (s) => { assert.equal(s.length % 4, 0, 'base64DecodeWebSafe : bourrage attendu'); return [...Buffer.from(s.replace(/-/g, '+').replace(/_/g, '/'), 'base64')].map((b) => (b > 127 ? b - 256 : b)); },
+      base64Decode: (s) => { if (/[^A-Za-z0-9+/=]/.test(s)) throw new Error('bad b64'); return [...Buffer.from(s, 'base64')]; },
       formatDate: (d) => new Date(d).toISOString().slice(0, 16).replace('T', ' ')
     },
     DriveApp: {
@@ -269,10 +283,20 @@ export function makeWorld() {
 export const run = (ctx, src) => vm.runInContext(src, ctx);
 export const out = (o) => JSON.parse(o.getContent());
 
-export function api(w) {
-  const post = (o) => out(run(w.ctx, `doPost({postData:{contents:${JSON.stringify(JSON.stringify({ appToken: 'secret', ...o }))}}})`));
-  const get = (o) => out(run(w.ctx, `doGet({parameter:${JSON.stringify({ appToken: 'secret', ...o })}})`));
-  return { post, get };
+export function api(w, role = 'tech') {
+  const raw = {
+    post: (o) => out(run(w.ctx, `doPost({postData:{contents:${JSON.stringify(JSON.stringify(o))}}})`)),
+    get: (o) => out(run(w.ctx, `doGet({parameter:${JSON.stringify(o)}})`))
+  };
+  // vraie connexion (une fois par monde et par niveau), puis la session accompagne chaque requête
+  w.sessions = w.sessions || {};
+  if (!w.sessions[role]) {
+    const r = raw.post({ action: 'login', password: role === 'support' ? PW_SUPPORT : PW_TECH, firstName: 'Test', lastName: role, clientId: 'login-' + role });
+    assert.equal(r.ok, true, JSON.stringify(r));
+    w.sessions[role] = r.data.session;
+  }
+  const withSession = (o) => ({ session: w.sessions[role], ...o });
+  return { post: (o) => raw.post(withSession(o)), get: (o) => raw.get(withSession(o)), raw };
 }
 
 // Un « téléphone » : identité, horloge propre (décalage en ms), dernière révision connue.

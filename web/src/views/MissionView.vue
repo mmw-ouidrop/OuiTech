@@ -146,7 +146,8 @@ const errorText = computed(() => {
   if (!e) return ''
   const m = {
     NETWORK: 'Pas de réseau : réessai automatique.', TIMEOUT: 'Le serveur met trop de temps : réessai automatique.',
-    UNAUTHORIZED: 'Accès refusé par le serveur : l’application doit être reconfigurée.',
+    UNAUTHORIZED: 'Connexion requise : reconnectez-vous (vos saisies sont conservées).',
+    SESSION_EXPIRED: 'Session expirée : reconnectez-vous (vos saisies sont conservées).',
     NOT_FOUND: 'Fiche introuvable côté serveur.', BUSY: 'Serveur occupé : réessai automatique.'
   }
   return m[e.code] || `Envoi impossible (${e.message}). Réessai automatique.`
@@ -267,7 +268,7 @@ const headingTag = (level) => 'h' + Math.min(level + 2, 5)
 </script>
 
 <template>
-  <p><router-link to="/">← Missions</router-link></p>
+  <p><router-link to="/fiches">← Fiches</router-link></p>
 
   <p v-if="state === 'loading'" role="status">Chargement…</p>
 

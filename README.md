@@ -3,7 +3,7 @@
 Comptes rendus d'intervention remplis sans réseau, remontés dans Notion au retour du réseau.
 
 ```
-gas/    Middleware Google Apps Script (Code.gs, Report.gs, appsscript.json, API.md, tests/)
+gas/    Middleware Google Apps Script (Code.gs, Report.gs, Auth.gs, appsscript.json, API.md, tests/)
 web/    PWA Vue 3 + Vite + Dexie (charte graphique OUIDROP 2026)
 ```
 
@@ -11,7 +11,9 @@ Flux : **PWA ⇄ Google Apps Script ⇄ Notion**, avec Drive comme zone de trans
 
 ## 1. Notion
 
-1. Créer une intégration interne (notion.so/my-integrations) → copier le secret.
+1. Créer une intégration interne (notion.so/my-integrations) → copier le secret. Onglet *Configuration* /
+   *Capacités* : cocher **Read content, Update content et Insert content** (sans les deux dernières, la lecture
+   fonctionne mais l'envoi du CR échoue avec « Insufficient permissions for this endpoint »).
 2. Sur la base « Interventions » : `⋯ ▸ Connexions` → ajouter l'intégration.
 3. La colonne d'ID court (ex. FI-252) est une propriété **ID unique** (nom par défaut : `ID`).
 4. Le template du rapport se trouve dans la page de chaque mission : titres H1/H2/H3, cases à cocher
@@ -20,8 +22,8 @@ Flux : **PWA ⇄ Google Apps Script ⇄ Notion**, avec Drive comme zone de trans
 ## 2. Google Apps Script
 
 1. Drive : créer le dossier racine des photos (aucun partage nécessaire) → copier son ID (fin de l'URL).
-2. script.google.com ▸ nouveau projet avec **deux fichiers** : coller `gas/Code.gs` (fichier `Code`) et
-   `gas/Report.gs` (nouveau fichier script `Report`). Afficher le manifeste
+2. script.google.com ▸ nouveau projet avec **trois fichiers** : coller `gas/Code.gs` (fichier `Code`),
+   `gas/Report.gs` (fichier `Report`) et `gas/Auth.gs` (fichier `Auth`). Afficher le manifeste
    (Paramètres du projet ▸ « Afficher le fichier appsscript.json ») et y coller `gas/appsscript.json`.
    Le contrat d'API (requêtes, fusion, codes d'erreur) est dans `gas/API.md`.
 3. Paramètres du projet ▸ **Propriétés du script** :
@@ -31,7 +33,10 @@ Flux : **PWA ⇄ Google Apps Script ⇄ Notion**, avec Drive comme zone de trans
    | `NOTION_TOKEN` | secret de l'intégration |
    | `NOTION_DB_ID` | ID de la base Interventions |
    | `DRIVE_FOLDER_ID` | ID du dossier racine Drive |
-   | `APP_TOKEN` | chaîne aléatoire longue (la même ira dans la PWA) |
+   | `PASSWORD_TECH` | mot de passe commun des **techniciens** (12 caractères ou plus) |
+   | `PASSWORD_SUPPORT` | mot de passe du **support** (optionnel ; donne tous les droits du technicien, et à l'avenir les pages réservées au support) |
+   | `SESSION_DAYS` | optionnel : durée d'une connexion, défaut 30 jours |
+   | `SESSION_EPOCH` | optionnel : passer de `1` à `2` pour **déconnecter tous les appareils** (après un changement de mot de passe, par exemple) |
    | `REF_PROPERTY_NAME` | optionnel, défaut `ID` |
    | `REF_PROPERTY_TYPE` | optionnel, défaut `unique_id` |
    | `PROPERTY_ORDER` | optionnel : noms des colonnes à afficher en premier, séparés par la barre verticale (ex. `Nom\|Client\|Adresse\|Statut`, à saisir sans les `\`). L'API Notion ne donne aucun ordre fiable : on le fixe ici. Les colonnes non citées suivent. |
@@ -49,7 +54,7 @@ Flux : **PWA ⇄ Google Apps Script ⇄ Notion**, avec Drive comme zone de trans
    Après chaque modification du code : *Gérer les déploiements ▸ Modifier ▸ Nouvelle version*.
 6. Optionnel : déclencheur quotidien sur `purgeStaleTempFiles` (nettoie les photos jamais synchronisées après 14 jours).
 
-Test hors Apps Script : `cd gas && node --test "tests/*.test.mjs"` (37 scénarios sur un Notion et un Drive simulés :
+Test hors Apps Script : `cd gas && node --test "tests/*.test.mjs"` (48 scénarios sur un Notion et un Drive simulés :
 fusion à deux techniciens, validation partagée, photos par lots, champs ajoutés, évolutions du template,
 suppressions manuelles dans Notion, limites de l'API). Il vérifie la logique du script, pas le vrai Notion.
 
@@ -57,7 +62,7 @@ suppressions manuelles dans Notion, limites de l'API). Il vérifie la logique du
 
 ```bash
 cd web
-cp .env.example .env.local     # renseigner VITE_GAS_URL et VITE_APP_TOKEN
+cp .env.example .env.local     # renseigner VITE_GAS_URL
 npm install
 npm test                       # tests (données, synchro de bout en bout avec le vrai code serveur, affichage)
 npm run dev                    # développement
@@ -69,6 +74,27 @@ npm run build && npm run preview
 
 **Première visite en ligne obligatoire** (installation du cache). Sur iPhone : *Partager ▸ Sur l'écran d'accueil*
 pour que les données ne soient pas purgées par Safari.
+
+### Connexion et niveaux d'accès (nouveau)
+
+- À l'ouverture, l'application demande **prénom, nom et mot de passe**. Le mot de passe détermine le niveau :
+  `PASSWORD_TECH` → *Technicien*, `PASSWORD_SUPPORT` → *Support* (le support voit tout ce que voit le technicien ;
+  les pages réservées au support se brancheront sur `minRole: 'support'` dans `web/src/router.js` et `web/src/lib/nav.js`).
+- Le serveur ne renvoie **aucune donnée** sans session valide (jeton signé, 30 jours). L'application publiée ne contient
+  aucun secret. 5 mots de passe erronés → l'appareil est bloqué 10 minutes.
+- La session reste sur l'appareil : on peut travailler **hors ligne** même session expirée ; la reconnexion est exigée au
+  premier appel réseau, sans perte de saisies. *Se déconnecter* ne supprime pas les données de l'appareil.
+- Mise en place : ajouter les propriétés `PASSWORD_TECH` (et `PASSWORD_SUPPORT`), coller `Auth.gs`, lancer **`testAuth`**
+  (vérifie la configuration sans rien afficher de secret), redéployer une **nouvelle version**, puis rebuilder la PWA.
+  Supprimer `APP_TOKEN` (inutile) et le secret GitHub `VITE_APP_TOKEN`.
+- Un appareil déjà connecté qui connaît encore l'ancienne version de l'application affichera « Connexion requise » : mettre
+  à jour l'application (bandeau « Nouvelle version disponible »).
+
+### Menu et pages
+
+Menu latéral (tiroir sur téléphone, colonne fixe sur grand écran) : Accueil · Fiches et CR · Méthodes · Machines ·
+Racks et casiers KO · Inventaires · Réglages. **Méthodes, Machines, Racks et Inventaires sont annoncés mais pas encore
+développés** (étapes suivantes). *Réglages* : nom, thème, taille du texte, synchronisation, stockage, déconnexion.
 
 ### Utilisation sur le terrain
 
@@ -117,6 +143,11 @@ supprimé automatiquement de l'appareil.
 
 ### Créer des templates
 
+**Astuce de mise en page** : rangez tout le template (titres, cases, blocs `json`) dans un **toggle** ou un **titre déroulant** dont le titre
+commence par « Template » (ex. *Template formulaire d'intervention*). Repliez-le dans Notion pour retrouver tout de suite le
+rapport du technicien juste en dessous. Le titre du toggle n'apparaît pas dans le formulaire ; son contenu est lu normalement
+(profondeur maximale : 2 niveaux de toggles imbriqués).
+
 `docs/template-exemple.md` : template complet à coller dans une page Notion (il passe dans le test
 `gas/tests/template-example.test.mjs`). Le mémo de référence (blocs reconnus, types de champs, règles, dépannage)
 est le document « Mémo — Créer un template de CR dans Notion ».
@@ -125,12 +156,12 @@ est le document « Mémo — Créer un template de CR dans Notion ».
 
 1. Créer un dépôt GitHub et y pousser **le contenu du dossier `ouidrop-interventions`** (`.github/`, `gas/`, `web/`, `README.md`) sur la branche `main`. Ne jamais commiter `.env.local`.
 2. Settings ▸ Pages ▸ *Build and deployment* ▸ Source : **GitHub Actions**.
-3. Settings ▸ Secrets and variables ▸ Actions : variable `VITE_GAS_URL` (URL `/exec`), secret `VITE_APP_TOKEN`.
+3. Settings ▸ Secrets and variables ▸ Actions : variable `VITE_GAS_URL` (URL `/exec`). Plus aucun secret : l'ancien `VITE_APP_TOKEN` peut être supprimé.
 4. Onglet Actions ▸ « Déployer la PWA » ▸ *Run workflow* (ou un push). L'adresse est
    `https://<compte>.github.io/<dépôt>/`. Ouvrir une mission : `…/?id=FI-252`.
 5. Après un changement de code Apps Script, redéployer une **nouvelle version** du déploiement web (l'URL `/exec` reste la même).
 
-Le jeton `APP_TOKEN` et l'URL du script sont intégrés au JavaScript publié : toute personne qui connaît l'adresse du site peut les lire.
+L'URL du script est intégrée au JavaScript publié (lisible par tous) ; elle ne donne accès à rien sans mot de passe.
 Sur l'offre gratuite de GitHub, Pages exige un dépôt public (le code l'est donc aussi). À réserver à des données non sensibles.
 
 ## Versions de l'API Notion
@@ -159,8 +190,9 @@ supprimé est reconstruit (le client renvoie alors tout ce qu'il a).
 - Écriture seule vers Notion : une correction faite à la main dans le rapport n'est pas reprise par l'application.
 - Heure de saisie = horloge du téléphone corrigée du décalage mesuré avec le serveur (latence incluse, ~1 s) :
   deux saisies à moins d'une seconde d'écart sur le même champ peuvent se départager « à l'envers ».
-- Pas de comptes : le nom est déclaré par l'utilisateur (non vérifié). `appToken` est embarqué dans la PWA : à
-  réserver à un usage interne.
+- Pas de comptes individuels : deux mots de passe **partagés** (technicien / support), le nom est déclaré par
+  l'utilisateur (non vérifié). Quiconque connaît un mot de passe a tous les droits de son niveau ; si l'un fuite,
+  le changer **et** augmenter `SESSION_EPOCH`.
 - Apps Script coupe une requête à 6 min : les photos sont transférées par lots de 6 par appel (durée par photo
   non mesurée sur le vrai système). Le verrou est unique pour tout le script : des synchronisations simultanées
   de fiches différentes s'exécutent l'une après l'autre (attente max. 30 s, puis `BUSY` et nouvel essai).

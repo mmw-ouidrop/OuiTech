@@ -43,6 +43,39 @@ export function setTheme(mode, storage = globalThis.localStorage) {
 
 export function initTheme() {
   applyTheme(theme.value)
+  applyTextSize(textSize.value)
   const mq = globalThis.matchMedia && globalThis.matchMedia('(prefers-color-scheme: dark)')
   if (mq && mq.addEventListener) mq.addEventListener('change', () => applyTheme(theme.value))
+}
+
+/* ───────────────────────── Taille du texte (gants, plein soleil…) ───────────────────────── */
+
+const TEXT_KEY = 'ouidrop.text.v1'
+export const TEXT_SIZES = ['normal', 'large', 'xlarge']
+export const TEXT_LABELS = { normal: 'Normal', large: 'Grand', xlarge: 'Très grand' }
+export const normalizeTextSize = (v) => (TEXT_SIZES.includes(v) ? v : 'normal')
+
+export function readTextSize(storage = globalThis.localStorage) {
+  try {
+    return normalizeTextSize(storage.getItem(TEXT_KEY))
+  } catch {
+    return 'normal'
+  }
+}
+
+export const textSize = ref(readTextSize())
+
+export function applyTextSize(size = textSize.value, doc = globalThis.document) {
+  if (!doc) return
+  const root = doc.documentElement
+  if (size === 'normal') root.removeAttribute('data-text')
+  else root.setAttribute('data-text', size)
+}
+
+export function setTextSize(size, storage = globalThis.localStorage) {
+  textSize.value = normalizeTextSize(size)
+  try {
+    storage.setItem(TEXT_KEY, textSize.value)
+  } catch { /* réglage valable pour cette session */ }
+  applyTextSize(textSize.value)
 }

@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { makeWorld, run, api, phone, PAGE, ROOT, PNG_B64 } from './fake-notion.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const SRC = ['Code.gs', 'Report.gs'].map((f) => fs.readFileSync(path.join(here, '..', f), 'utf8'));
+const SRC = ['Code.gs', 'Report.gs', 'Auth.gs'].map((f) => fs.readFileSync(path.join(here, '..', f), 'utf8'));
 
 function world() {
   const w = makeWorld();
@@ -24,8 +24,8 @@ const lines = (w) => w.visibleReport().map((b) => w.text(b));
 
 test('getIntervention : token, propriétés, template, schéma', () => {
   const w = world(); const { get } = api(w);
-  assert.equal(get({ action: 'getIntervention', id: 'FI-252', appToken: 'nope' }).error.code, 'UNAUTHORIZED');
-  assert.equal(get({ action: 'ping', appToken: '' }).ok, true);
+  assert.equal(get({ action: 'getIntervention', id: 'FI-252', session: 'nope' }).error.code, 'UNAUTHORIZED');
+  assert.equal(get({ action: 'ping', session: '' }).ok, true);
   const r = get({ action: 'getIntervention', id: 'fi 252' });
   assert.equal(r.ok, true, JSON.stringify(r));
   assert.equal(r.data.reference, 'FI-252');
@@ -75,6 +75,34 @@ test('définitions de champs douteuses : avertissements précis, rien n’est re
     'DUPLICATE_ID:', 'RESERVED_ID:u_reserve', 'UNKNOWN_TYPE:type_inconnu'
   ].sort());
   assert.equal(r.templateBlocks.filter((b) => b.kind === 'component').length, 3 + 8, 'tous les champs sont conservés (3 du template de base + 8)');
+});
+
+test('template rangé dans un toggle « Template … » : titre ignoré, contenu lu, rapport en dessous', () => {
+  for (const kind of ['toggle', 'heading_1']) {
+    const w = world(); const { get } = api(w); const rt = w.rt;
+    w.childrenOf(PAGE).forEach((b) => { b.archived = true; });
+    const inner = [
+      { type: 'heading_2', heading_2: { rich_text: rt('Matériel') } },
+      { type: 'code', code: { language: 'json', rich_text: rt(JSON.stringify({ type: 'text', id: 'ref', label: 'Référence' })) } },
+      { type: 'to_do', to_do: { rich_text: rt('Zone dégagée'), checked: false } }
+    ];
+    const spec = kind === 'toggle'
+      ? { type: 'toggle', toggle: { rich_text: rt('Template formulaire d’intervention'), children: inner } }
+      : { type: 'heading_1', heading_1: { rich_text: rt('Template — formulaire'), is_toggleable: true, children: inner } };
+    w.seedChildren(PAGE, [{ type: 'paragraph', paragraph: { rich_text: rt('Note interne') } }, spec]);
+    const r = get({ action: 'getIntervention', id: 'FI-252' });
+    assert.equal(r.ok, true, JSON.stringify(r));
+    const blocks = r.data.templateBlocks;
+    assert.deepEqual(blocks.map((b) => b.kind + ':' + (b.text || b.label)), ['text:Note interne', 'section:Matériel', 'component:Référence', 'component:Zone dégagée'], kind);
+    assert.deepEqual(r.data.schema.map((s) => s.id).filter((i) => !i.startsWith('S:')), ['ref', r.data.schema[2].id]);
+
+    // le rapport est écrit APRÈS le toggle, au niveau de la page
+    const a = phone(w, 'Karim Benali', 'cA'); a.load();
+    assert.equal(a.sync({ fields: fields({ ref: 'CPT-1' }, a.at()) }).ok, true);
+    const top = w.childrenOf(PAGE).map((b) => b.type);
+    assert.equal(top[top.length - 1], 'callout', kind);
+    assert.ok(top.indexOf('callout') > top.indexOf(kind), kind);
+  }
 });
 
 /* ═════════════════════════ Création & mise à jour en place ═════════════════════════ */
@@ -540,7 +568,7 @@ test('panne Notion en cours de synchro : erreur franche, puis reprise sans doubl
 
 test('contrôles : token, auteur, clientId, page hors base, valeurs invalides', () => {
   const w = world(); const { post } = api(w); const a = phone(w, 'Karim Benali', 'cA'); a.load();
-  assert.equal(post({ action: 'syncReport', appToken: 'x', notionPageId: PAGE }).error.code, 'UNAUTHORIZED');
+  assert.equal(post({ action: 'syncReport', session: 'x', notionPageId: PAGE }).error.code, 'UNAUTHORIZED');
   assert.equal(post({ action: 'syncReport', notionPageId: 'pas-un-id', clientId: 'c', author: { firstName: 'a', lastName: 'b' } }).error.code, 'BAD_REQUEST');
   assert.equal(post({ action: 'syncReport', notionPageId: PAGE, author: { firstName: 'a', lastName: 'b' } }).error.code, 'BAD_REQUEST');
   assert.equal(post({ action: 'syncReport', notionPageId: PAGE, clientId: 'c', author: { firstName: ' ', lastName: '' } }).error.code, 'AUTHOR_REQUIRED');

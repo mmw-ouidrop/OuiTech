@@ -4,7 +4,8 @@
 //  - GET sans en-tête personnalisé et POST en `text/plain` : ce sont des requêtes
 //    « simples » qui évitent le preflight CORS (GAS ne répond pas aux OPTIONS) ;
 //  - GAS répond toujours HTTP 200 ; le résultat est dans { ok, data | error }.
-import { GAS_URL, APP_TOKEN } from '../config.js'
+import { GAS_URL } from '../config.js'
+import { getSession, reportAuthFailure, isRejectCode } from './auth.js'
 
 export class ApiError extends Error {
   constructor(code, message, extra = {}) {
@@ -16,8 +17,8 @@ export class ApiError extends Error {
 }
 
 async function request(url, init, timeoutMs) {
-  if (!GAS_URL || !APP_TOKEN) {
-    throw new ApiError('CONFIG', "L'application n'est pas configurée (VITE_GAS_URL / VITE_APP_TOKEN).")
+  if (!GAS_URL) {
+    throw new ApiError('CONFIG', "L'application n'est pas configurée (VITE_GAS_URL).")
   }
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), timeoutMs)
@@ -48,13 +49,15 @@ async function request(url, init, timeoutMs) {
   if (!body || body.ok !== true) {
     const e = (body && body.error) || {}
     const { code, message, ...extra } = e
+    // Le serveur refuse la session (expirée, révoquée) : on la retire et l'interface renvoie à la connexion.
+    if (isRejectCode(code)) reportAuthFailure(code)
     throw new ApiError(code || 'SERVER', message || 'Erreur du serveur.', extra)
   }
   return body.data
 }
 
 const get = (params, timeoutMs = 30000) => {
-  const q = new URLSearchParams({ ...params, appToken: APP_TOKEN })
+  const q = new URLSearchParams({ ...params, session: getSession() })
   return request(`${GAS_URL}?${q}`, { method: 'GET' }, timeoutMs)
 }
 
@@ -64,12 +67,18 @@ const post = (payload, timeoutMs) =>
     {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ appToken: APP_TOKEN, ...payload })
+      body: JSON.stringify({ session: getSession(), ...payload })
     },
     timeoutMs
   )
 
 export const api = {
+  // Connexion : mot de passe + prénom/nom. Renvoie { session, role, issuedAt, expiresAt, serverNow }.
+  login: ({ password, firstName, lastName, clientId }) => post({ action: 'login', password, firstName, lastName, clientId }, 30000),
+
+  // La session est-elle toujours valable ? { role, expiresAt, serverNow }
+  session: () => get({ action: 'session' }, 15000),
+
   getIntervention: (id) => get({ action: 'getIntervention', id }),
 
   // fileData : base64 sans préfixe. Renvoie { fileId, … }.

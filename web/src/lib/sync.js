@@ -19,6 +19,7 @@ export const RETRYABLE = new Set([
   'NETWORK', 'TIMEOUT', 'BAD_RESPONSE', 'BUSY', 'NOTION_UNAVAILABLE', 'NOTION_ERROR',
   'NOTION_UPLOAD_FAILED', 'INTERNAL', 'SERVER', 'STATE_DESYNC'
 ])
+// (UNAUTHORIZED / SESSION_EXPIRED : jamais réessayés tels quels ; api.js renvoie l'utilisateur à la connexion)
 export const isRetryable = (err) => !err || !err.code || RETRYABLE.has(err.code)
 
 const hasQueued = (rows) => rows.some((r) => r.uploadStatus === 'queued')

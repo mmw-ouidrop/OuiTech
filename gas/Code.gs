@@ -10,7 +10,11 @@
  *                        Aucun partage public n'est nécessaire : les photos y
  *                        séjournent le temps de la synchro, puis Notion les
  *                        héberge et le script les met à la corbeille.
- *    APP_TOKEN           Jeton partagé avec la PWA (chaîne aléatoire longue)
+ *    PASSWORD_TECH       Mot de passe du niveau « technicien » (12 caractères ou plus)
+ *    PASSWORD_SUPPORT    Mot de passe du niveau « support » (optionnel ; ⊇ technicien)
+ *    SESSION_DAYS        (optionnel) Durée d'une connexion en jours. Défaut : 30
+ *    SESSION_EPOCH       (optionnel) Augmenter (1 → 2) pour déconnecter tous les appareils
+ *                        (SESSION_SECRET, clé de signature, est créée automatiquement ; voir Auth.gs)
  *    REF_PROPERTY_NAME   (optionnel) Colonne portant l'ID court. Défaut : "ID"
  *    REF_PROPERTY_TYPE   (optionnel) unique_id | title | rich_text | formula.
  *                        Défaut : "unique_id"
@@ -37,15 +41,18 @@
  *    Report.gs       rapport partagé : état, fusion champ par champ, écriture
  *                    incrémentale dans Notion (route 3) — le contrat complet
  *                    des requêtes/réponses est décrit en tête de ce fichier
+ *    Auth.gs         connexion par mot de passe (2 niveaux), sessions signées
  *    appsscript.json manifeste
  *
  *  ROUTES
- *    GET  ?action=ping
- *    GET  ?action=getIntervention&id=FI-252&appToken=...
+ *    GET  ?action=ping                       (sans session)
+ *    POST { action:"login", password, firstName, lastName, clientId }   → session (voir Auth.gs)
+ *    GET  ?action=session&session=…          → niveau et validité de la session
+ *    GET  ?action=getIntervention&id=FI-252&session=...
  *           → mission + template (templateBlocks, schema) + état du rapport
- *    GET  ?action=getReport&pageId=…&sinceRev=N&clientId=…&name=…&appToken=…
+ *    GET  ?action=getReport&pageId=…&sinceRev=N&clientId=…&name=…&session=…
  *           → { unchanged:true } ou l'état du rapport (relève des collègues)
- *    POST { action:"uploadMedia", appToken, fileData, fileName, mimeType,
+ *    POST { action:"uploadMedia", session, fileData, fileName, mimeType,
  *           mediaId?, reference? }                 → { fileId, ... }
  *    POST { action:"syncReport", … }               → voir Report.gs
  *
@@ -144,8 +151,10 @@ function doGet(e) {
   try {
     const p = (e && e.parameter) || {};
     if (p.action === 'ping') return ok_({ ts: new Date().toISOString() });
-    assertToken_(p.appToken);
+    const auth = authorize_(p.session, 'tech');
     switch (p.action) {
+      case 'session':
+        return ok_({ role: auth.r, expiresAt: auth.exp, serverNow: Date.now() });
       case 'getIntervention':
         return ok_(getIntervention_(p.id));
       case 'getReport':
@@ -161,7 +170,8 @@ function doGet(e) {
 function doPost(e) {
   try {
     const body = parseBody_(e);
-    assertToken_(body.appToken);
+    if (body.action === 'login') return ok_(login_(body));
+    authorize_(body.session, 'tech');
     switch (body.action) {
       case 'uploadMedia':
         return ok_(uploadMedia_(body));
@@ -192,12 +202,6 @@ function cfg_(key, fallback) {
     throw new ApiError_('CONFIG_MISSING', 'Propriété de script manquante : ' + key);
   }
   return v;
-}
-
-function assertToken_(token) {
-  if (!safeEqual_(token, cfg_('APP_TOKEN'))) {
-    throw new ApiError_('UNAUTHORIZED', 'appToken invalide ou manquant');
-  }
 }
 
 // Comparaison à durée constante (évite les attaques par mesure de temps).
@@ -502,10 +506,25 @@ function isNestable_(b) {
   return /^heading_[123]$/.test(b.type) && b[b.type] && b[b.type].is_toggleable === true;
 }
 
+// Un toggle (ou un titre déroulant) dont le titre commence par « Template » est un simple
+// CONTENEUR : le responsable y range tout le formulaire pour pouvoir le replier dans Notion et
+// retrouver le rapport juste en dessous. Son titre n'est pas un champ ni une section du formulaire ;
+// son contenu est lu normalement.
+function isTemplateContainer_(b) {
+  if (!isNestable_(b)) return false;
+  const title = plain_((b[b.type] || {}).rich_text).trim().toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  return title.indexOf('template') === 0;
+}
+
 function convertBlocks_(blocks, ctx, depth) {
   for (let i = 0; i < blocks.length; i++) {
     const b = blocks[i];
     if (depth === 0 && isReportBlock_(b)) continue;   // le rapport n'est pas du template
+    if (isTemplateContainer_(b)) {
+      if (b._children) convertBlocks_(b._children, ctx, depth + 1);
+      continue;
+    }
     const t = b.type;
     const data = b[t] || {};
     const text = plain_(data.rich_text);
@@ -682,7 +701,7 @@ function targetFolder_(reference) {
 }
 
 // Garde-fou : un fileId fourni par la PWA doit se trouver dans le dossier racine
-// (ou l'un de ses sous-dossiers directs). Sans cela, l'appToken permettrait de
+// (ou l'un de ses sous-dossiers directs). Sans cela, un client authentifié pourrait sinon
 // faire lire n'importe quel fichier du Drive du propriétaire du script.
 function assertInRoot_(file) {
   const rootId = cfg_('DRIVE_FOLDER_ID');

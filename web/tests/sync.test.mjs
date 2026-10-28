@@ -12,7 +12,7 @@ import { createSyncEngine, decideDue, isRetryable } from '../src/lib/sync.js'
 class ApiError extends Error { constructor(code, message) { super(message); this.code = code } }   // même forme que lib/api.js (qui lit import.meta.env)
 
 const here = path.dirname(fileURLToPath(import.meta.url))
-const SRC = ['Code.gs', 'Report.gs'].map((f) => fs.readFileSync(path.join(here, '../../gas', f), 'utf8'))
+const SRC = ['Code.gs', 'Report.gs', 'Auth.gs'].map((f) => fs.readFileSync(path.join(here, '../../gas', f), 'utf8'))
 let seq = 0
 
 function setup() {

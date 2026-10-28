@@ -92,3 +92,11 @@
     --fs-cta: 18px;
   }
 }
+
+/* Taille du texte choisie dans Réglages (corps, petits textes, boutons ; les titres gardent la charte) */
+:root[data-text='large'] { --fs-body: 18px; --fs-small: 16px; --fs-cta: 18px; }
+:root[data-text='xlarge'] { --fs-body: 20px; --fs-small: 18px; --fs-cta: 20px; }
+@media (min-width: 768px) {
+  :root[data-text='large'] { --fs-body: 20px; --fs-small: 18px; --fs-cta: 20px; }
+  :root[data-text='xlarge'] { --fs-body: 22px; --fs-small: 20px; --fs-cta: 22px; }
+}

@@ -3,7 +3,16 @@
 Base : URL `/exec` du déploiement. Toutes les réponses sont en HTTP 200 :
 `{ "ok": true, "data": … }` ou `{ "ok": false, "error": { "code", "message", … } }`.
 Les POST sont envoyés en `Content-Type: text/plain;charset=utf-8` avec un corps JSON (évite la requête de
-pré-vérification CORS, que Apps Script ne gère pas). Chaque requête porte `appToken`.
+pré-vérification CORS, que Apps Script ne gère pas). Chaque requête (sauf `ping` et `login`) porte `session` : le jeton signé obtenu par `login` (voir `Auth.gs`).
+
+## Connexion
+| Appel | Rôle |
+|---|---|
+| POST `{ action:"login", password, firstName, lastName, clientId }` | → `{ session, role:"tech"\|"support", issuedAt, expiresAt, serverNow }`. Erreurs : `BAD_PASSWORD`, `NAME_REQUIRED`, `TOO_MANY_ATTEMPTS` (`retryAfterSec`), `CONFIG_MISSING`. |
+| GET `?action=session&session=…` | → `{ role, expiresAt, serverNow }` : la session est-elle encore valable ? |
+
+Erreurs d'accès sur toute autre route : `UNAUTHORIZED` (absente / invalide), `SESSION_EXPIRED` (expirée ou révoquée par `SESSION_EPOCH`),
+`FORBIDDEN_ROLE` (niveau insuffisant). Le client, sur `UNAUTHORIZED`/`SESSION_EXPIRED`, oublie la session et renvoie à la connexion.
 
 ## GET
 
@@ -41,14 +50,14 @@ editors[]      autres appareils actifs : { clientId, name, agoSec }
 ```
 
 ## POST `uploadMedia`
-`{ action, appToken, fileData (base64 ou data:URL), fileName, mimeType, mediaId, reference }`
+`{ action, session, fileData (base64 ou data:URL), fileName, mimeType, mediaId, reference }`
 → `{ fileId, name, size, duplicate }`. Idempotent par `mediaId`. Dépose la photo dans
 `<dossier racine>/<référence>/` (transit temporaire, sans partage public). JPEG/PNG/WebP/GIF seulement.
 
 ## POST `syncReport`
 Corps :
 ```
-action:"syncReport", appToken, notionPageId, reference?
+action:"syncReport", session, notionPageId, reference?
 clientId          identifiant stable de l'appareil (généré une fois)
 author            { firstName, lastName }   obligatoire
 clientNow         Date.now() du téléphone à l'envoi

@@ -2,9 +2,8 @@
 # Réglages requis : Settings ▸ Pages ▸ Source = « GitHub Actions »,
 # et dans Settings ▸ Secrets and variables ▸ Actions :
 #   variable  VITE_GAS_URL      (onglet Variables)  URL /exec du déploiement Apps Script
-#   secret    VITE_APP_TOKEN    (onglet Secrets)    même valeur que APP_TOKEN dans Apps Script
-# ATTENTION : ces deux valeurs sont intégrées au JavaScript publié, donc lisibles par
-# quiconque ouvre le site. Le « secret » GitHub ne protège que les journaux du build.
+# Aucun secret : l'accès aux données est protégé par la connexion (mots de passe dans Apps Script).
+# (L'ancien secret VITE_APP_TOKEN n'est plus utilisé : vous pouvez le supprimer.)
 name: Déployer la PWA
 
 on:
@@ -38,7 +37,6 @@ jobs:
       - run: npm run build
         env:
           VITE_GAS_URL: ${{ vars.VITE_GAS_URL }}
-          VITE_APP_TOKEN: ${{ secrets.VITE_APP_TOKEN }}
           VITE_DEFAULT_PREFIX: FI
       - uses: actions/upload-pages-artifact@v3
         with:
