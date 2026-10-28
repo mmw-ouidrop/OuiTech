@@ -100,8 +100,8 @@ test('template rangé dans un toggle « Template … » : titre ignoré, contenu
     const a = phone(w, 'Karim Benali', 'cA'); a.load();
     assert.equal(a.sync({ fields: fields({ ref: 'CPT-1' }, a.at()) }).ok, true);
     const top = w.childrenOf(PAGE).map((b) => b.type);
-    assert.equal(top[top.length - 1], 'callout', kind);
-    assert.ok(top.indexOf('callout') > top.indexOf(kind), kind);
+    assert.deepEqual(top.slice(-2), ['toggle', 'toggle'], kind);       // rapport puis données de synchronisation
+    assert.ok(top.length >= 3 && top.indexOf(kind) < top.length - 2, kind);
   }
 });
 
@@ -116,16 +116,19 @@ test('1re synchro : squelette complet, état en JSON ASCII, rien d’autre dans 
   assert.equal(r.data.report.rev, 1);
   assert.equal(r.data.reset, false);
 
-  const c = w.reportCallout();
-  assert.equal(c.callout.icon.emoji, '📋');
-  assert.equal(w.text(c), "Rapport d'intervention — En cours");
+  const c = w.reportRoot();
+  assert.equal(w.text(c), 'CR intervention — En cours');
+  const top = w.childrenOf(PAGE);
+  assert.deepEqual(top.filter((b) => b.type === 'toggle').map((b) => w.text(b)), ['CR intervention — En cours', 'Données de synchronisation (ne pas modifier)']);
+  assert.equal(top.indexOf(w.stateToggle()), top.indexOf(c) + 1, 'données = frère juste après le rapport');
+  assert.equal(top.some((b) => b.type === 'callout'), false);
   const l = lines(w);
   assert.match(l[0], /^Dernière modification : Karim Benali · 2026-10-20 08:00$/);
   assert.deepEqual(l.slice(1), ['Matériel', "Prendre en photo l'installation", 'État du matériel : Usagé', 'Zone dégagée']);
   assert.equal(w.visibleReport()[4].to_do.checked, true);
   assert.ok(/^[\x20-\x7e]*$/.test(w.stateJson()), 'JSON ASCII uniquement');
   assert.equal(JSON.parse(w.stateJson()).fields.etat_materiel.by, 'Karim Benali');
-  assert.equal(w.count('PATCH', /children$/), 2, 'création du rapport + bloc de données');
+  assert.equal(w.count('PATCH', /children$/), 3, 'toggle rapport + toggle données + bloc JSON');
   // le template n'est pas pollué par le rapport
   const g = a.load();
   assert.ok(!JSON.stringify(g.data.templateBlocks).includes('Dernière modification'));
@@ -242,7 +245,7 @@ test('valider : dernières saisies appliquées, CR figé pour tous, réouverture
   const v = a.sync({ fields: fields({ etat_materiel: 'Usagé' }, a.at()), status: { value: 'validated', at: a.at() } });
   assert.equal(v.data.applied.status, true);
   assert.equal(v.data.report.fields.etat_materiel.v, 'Usagé', 'saisie envoyée avec la validation appliquée');
-  assert.equal(w.text(w.reportCallout()), "Rapport d'intervention — Validé");
+  assert.equal(w.text(w.reportCallout()), "CR intervention — Validé");
   assert.match(lines(w)[0], /Validé par Karim Benali/);
 
   w.now += 1000;
@@ -256,7 +259,7 @@ test('valider : dernières saisies appliquées, CR figé pour tous, réouverture
   const re = b.sync({ fields: fields({ etat_materiel: 'Défectueux' }, b.at()), status: { value: 'draft', at: b.at() } });
   assert.equal(re.data.report.status, 'draft');
   assert.equal(re.data.report.fields.etat_materiel.v, 'Défectueux');
-  assert.equal(w.text(w.reportCallout()), "Rapport d'intervention — En cours");
+  assert.equal(w.text(w.reportCallout()), 'CR intervention — En cours');
 });
 
 test('une validation plus ancienne qu’une réouverture est refusée', () => {
@@ -502,8 +505,7 @@ test('rapport entier supprimé à la main (cache périmé) : recréé, « reset 
 test('données de synchronisation abîmées à la main : rapport reconstruit, avertissement', () => {
   const w = world(); const a = phone(w, 'Karim Benali', 'cA'); a.load();
   a.sync({ fields: fields({ etat_materiel: 'Neuf' }, a.at()) });
-  const t = w.childrenOf(w.reportCallout().id).find((b) => b.type === 'toggle');
-  const code = w.childrenOf(t.id)[0];
+  const code = w.childrenOf(w.stateToggle().id)[0];
   code.code.rich_text = [{ type: 'text', text: { content: '{ abîmé' }, plain_text: '{ abîmé' }];
   w.flushCache(); w.now += 1000;
   const r = a.sync({ fields: fields({ etat_materiel: 'Usagé' }, a.at()) });
@@ -511,7 +513,9 @@ test('données de synchronisation abîmées à la main : rapport reconstruit, av
   assert.ok(r.data.warnings.some((x) => x.code === 'STATE_CORRUPT'));
   assert.equal(r.data.reset, true);
   assert.equal(w.visibleReport().length > 0, true);
-  assert.equal(w.kids[PAGE.replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, '$1-$2-$3-$4-$5')].filter((i) => w.blocks[i].type === 'callout' && !w.blocks[i].archived).length, 1);
+  const tops = w.childrenOf(PAGE);
+  assert.equal(tops.filter((b) => b.type === 'toggle' && w.text(b).startsWith('CR intervention')).length, 1);
+  assert.equal(tops.filter((b) => b.type === 'toggle' && w.text(b).startsWith('Données de synchronisation')).length, 1);
 });
 
 test('ancien rapport v1 (sans données de synchronisation) : remplacé, jamais deux rapports', () => {
@@ -519,10 +523,12 @@ test('ancien rapport v1 (sans données de synchronisation) : remplacé, jamais d
   w.seedChildren(PAGE, [{ type: 'callout', callout: { icon: { type: 'emoji', emoji: '📋' }, rich_text: w.rt("Rapport d'intervention — 01/01/2026 10:00") } }]);
   const g = a.load();
   assert.equal(g.data.report, null);
-  assert.equal(g.data.warnings.some((x) => x.code === 'REPORT_STATE_ERROR'), true);
   const r = a.sync({ fields: fields({ etat_materiel: 'Neuf' }, a.at()) });
   assert.equal(r.ok, true, JSON.stringify(r));
-  assert.equal(w.kids[Object.keys(w.kids)[0]].filter((i) => w.blocks[i].type === 'callout' && !w.blocks[i].archived).length, 1);
+  const tops = w.childrenOf(PAGE);
+  assert.equal(tops.filter((b) => b.type === 'callout').length, 0, 'ancien callout retiré');
+  assert.deepEqual(tops.filter((b) => b.type === 'toggle').map((b) => w.text(b)), ['CR intervention — En cours', 'Données de synchronisation (ne pas modifier)']);
+  assert.ok(r.data.warnings.some((x) => x.code === 'LEGACY_REPORT_REPLACED'));
 });
 
 test('texte > 2000 caractères, accents et emoji : découpés, relus à l’identique après éviction du cache', () => {
@@ -600,7 +606,7 @@ test('route 2 uploadMedia : dossier par référence, idempotent, sans lien publi
 test('testNotionCapabilities s’exécute de bout en bout sur le simulateur et nettoie ses blocs', () => {
   const w = world();
   run(w.ctx, 'testNotionCapabilities()');
-  assert.equal(w.kids[Object.keys(w.kids)[0]].filter((i) => !w.blocks[i].archived && w.blocks[i].type === 'callout').length, 0);
+  assert.equal(w.kids[Object.keys(w.kids)[0]].filter((i) => !w.blocks[i].archived && /TEST capacités/.test(w.text(w.blocks[i]))).length, 0);
 });
 
 test('testTemplate (Apps Script) : résumé lisible et avertissements, sans planter', () => {

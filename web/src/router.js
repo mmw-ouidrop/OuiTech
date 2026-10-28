@@ -3,6 +3,8 @@ import HomeView from './views/HomeView.vue'
 import FichesView from './views/FichesView.vue'
 import MissionView from './views/MissionView.vue'
 import LoginView from './views/LoginView.vue'
+import MethodsView from './views/MethodsView.vue'
+import MethodView from './views/MethodView.vue'
 import SettingsView from './views/SettingsView.vue'
 import ComingSoonView from './views/ComingSoonView.vue'
 import { normalizeReference, consumeUrlReference } from './lib/ref.js'
@@ -19,10 +21,8 @@ export const router = createRouter({
     { path: '/', name: 'home', component: HomeView, meta: { title: 'Accueil' } },
     { path: '/fiches', name: 'fiches', component: FichesView, meta: { title: 'Fiches et CR' } },
     { path: '/m/:reference', name: 'mission', component: MissionView, props: true, meta: { title: 'Fiche d’intervention', section: 'fiches' } },
-    {
-      path: '/methodes', name: 'methodes', component: ComingSoonView, meta: { title: 'Méthodes' },
-      props: { title: 'Méthodes', text: 'Les fiches méthodes de maintenance, classées par ensemble de la machine, avec vidéo, matériel, outils et étapes.' }
-    },
+    { path: '/methodes', name: 'methodes', component: MethodsView, meta: { title: 'Méthodes' } },
+    { path: '/methodes/:id', name: 'methode', component: MethodView, props: true, meta: { title: 'Méthode', section: 'methodes' } },
     {
       path: '/machines', name: 'machines', component: ComingSoonView, meta: { title: 'Machines' },
       props: { title: 'Liste des machines', text: 'Adresse, Wi-Fi, code de la boîte à clés et informations utiles de chaque machine.' }

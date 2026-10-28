@@ -5,17 +5,21 @@
  * ============================================================================
  *
  *  PRINCIPE
- *  Le rapport est UN bloc « callout » 📋 en fin de page Notion :
+ *  La page Notion contient TROIS toggles frères, dans cet ordre :
  *
- *    📋 Rapport d'intervention — En cours | Validé          ← titre
- *       Dernière modification : Prénom Nom · 20/10/2026 17:32  ← ligne grise
- *       ## Section                                           ┐ un bloc par
- *       ☑ Case à cocher                                      │ élément du
- *       **Champ** : valeur                                   │ template, mis à
- *       **Photos**                                           │ jour EN PLACE ;
- *          └ (images)                                        ┘ photos dessous
- *       ▸ Données de synchronisation (ne pas modifier)       ← toggle replié
- *            └ { JSON : état partagé }
+ *    ▸ Template CR intervention                      ← écrit par le responsable (le formulaire)
+ *    ▸ CR intervention — En cours | Validé           ← LE RAPPORT (écrit par l'application)
+ *         Dernière modification : Prénom Nom · 20/10/2026 17:32   ← ligne grise
+ *         ## Section                                  ┐ un bloc par
+ *         ☑ Case à cocher                             │ élément du
+ *         **Champ** : valeur                          │ template, mis à
+ *         **Photos**                                  │ jour EN PLACE ;
+ *            └ (images)                               ┘ photos dessous
+ *    ▸ Données de synchronisation (ne pas modifier)  ← toggle replié, frère du rapport
+ *         └ { JSON : état partagé }
+ *
+ *  (Jusqu'à l'étape 5, le rapport était un callout 📋 contenant aussi les données ; il est
+ *  remplacé par cette structure à la première synchronisation.)
  *
  *  Le JSON est la référence : pour chaque champ, valeur + auteur + heure. Le
  *  texte visible en est la vue. Modifier à la main un bloc du rapport dans
@@ -335,15 +339,17 @@ function loadState_(pageId, opts) {
   const cached = opts.fresh ? null : cacheGetState_(pageId);
   if (cached) return cached;
 
-  const calloutId = opts.calloutId || findReportBlocks_(pageId)[0];
-  if (!calloutId) return null;
-
-  const kids = listChildren_(calloutId);
-  const toggle = kids.filter(function (b) {
-    return b.type === 'toggle' && plain_(b.toggle.rich_text).indexOf(STATE_TOGGLE_TITLE) === 0;
-  })[0];
-  if (!toggle) throw new ApiError_('STATE_MISSING', 'Bloc « Données de synchronisation » introuvable dans le rapport');
-  const code = listChildren_(toggle.id).filter(function (b) { return b.type === 'code'; })[0];
+  let rootId = opts.rootId;
+  let stateId = opts.stateId;
+  if (!rootId) {
+    const parts = findReportParts_(pageId);
+    rootId = parts.roots[0];
+    stateId = parts.states[0];
+  }
+  if (!rootId) return null;              // pas encore de rapport (un ancien callout n'en est pas un : voir applyChanges_)
+  if (!stateId) throw new ApiError_('STATE_MISSING', 'Bloc « Données de synchronisation » introuvable à côté du rapport');
+  const kids = listChildren_(rootId);
+  const code = listChildren_(stateId).filter(function (b) { return b.type === 'code'; })[0];
   if (!code) throw new ApiError_('STATE_MISSING', 'Données de synchronisation introuvables dans le rapport');
 
   let state;
@@ -355,7 +361,7 @@ function loadState_(pageId, opts) {
   if (!state || state.v !== STATE_VERSION || !state.fields || !state.schema) {
     throw new ApiError_('STATE_CORRUPT', 'Données de synchronisation invalides');
   }
-  state.meta = Object.assign({}, state.meta, { callout: calloutId, toggle: toggle.id, code: code.id });
+  state.meta = Object.assign({}, state.meta, { root: rootId, toggle: stateId, code: code.id });
   if (!state.meta.meta) {
     const p = kids.filter(function (b) { return b.type === 'paragraph'; })[0];
     if (p) state.meta.meta = p.id;
@@ -574,37 +580,32 @@ function createReport_(pageId, state, created) {
     children.push(blockForItem_(it, state));
     keys.push(it.id);
   });
-  children.push({
+
+  // 1) « CR intervention » : toggle contenant la ligne « Dernière modification » puis un bloc par élément.
+  const root = {
     object: 'block', type: 'toggle',
-    toggle: { rich_text: rt_(STATE_TOGGLE_TITLE, { color: 'gray' }) }
-  });
-  keys.push('@state');
-
-  const callout = {
-    object: 'block', type: 'callout',
-    callout: {
-      rich_text: headerTitle_(state),
-      icon: { type: 'emoji', emoji: REPORT_ICON },
-      color: 'blue_background',
-      children: children.slice(0, NOTION_MAX_CHILDREN)
-    }
+    toggle: { rich_text: headerTitle_(state), children: children.slice(0, NOTION_MAX_CHILDREN) }
   };
-  const calloutId = appendPlain_(pageId, [callout])[0].id;
+  const rootId = appendPlain_(pageId, [root])[0].id;
   for (let i = NOTION_MAX_CHILDREN; i < children.length; i += NOTION_MAX_CHILDREN) {
-    appendPlain_(calloutId, children.slice(i, i + NOTION_MAX_CHILDREN));
+    appendPlain_(rootId, children.slice(i, i + NOTION_MAX_CHILDREN));
   }
-
-  const kids = listChildren_(calloutId);
+  const kids = listChildren_(rootId);
   if (kids.length !== children.length) {
     throw new ApiError_('STATE_DESYNC', 'Le rapport créé ne contient pas le nombre de blocs attendu');
   }
-  state.meta = { callout: calloutId };
+  state.meta = { root: rootId };
   state.blocks = {};
   keys.forEach(function (key, i) {
     if (key === '@meta') state.meta.meta = kids[i].id;
-    else if (key === '@state') state.meta.toggle = kids[i].id;
     else { state.blocks[key] = { b: kids[i].id, t: kids[i].type }; created[key] = true; }
   });
+
+  // 2) « Données de synchronisation » : toggle frère, juste après le rapport.
+  state.meta.toggle = appendPlain_(pageId, [{
+    object: 'block', type: 'toggle',
+    toggle: { rich_text: rt_(STATE_TOGGLE_TITLE, { color: 'gray' }) }
+  }])[0].id;
   state.meta.code = appendPlain_(state.meta.toggle, [codeBlock_()])[0].id;
   writeState_(pageId, state);     // ids connus : on valide tout de suite l'état
 }
@@ -623,7 +624,7 @@ function ensureBlocks_(state, created, warnings) {
     }
     if (!anchor) anchor = state.meta.meta;
     const blocks = run.map(function (it) { return blockForItem_(it, state); });
-    const ids = insertAfter_(state.meta.callout, anchor, blocks, warnings);
+    const ids = insertAfter_(state.meta.root, anchor, blocks, warnings);
     run.forEach(function (it, n) {
       state.blocks[it.id] = { b: ids[n].id, t: ids[n].type };
       created[it.id] = true;
@@ -715,6 +716,14 @@ function syncReport_(b) {
   return out;
 }
 
+// Supprime tout ce qui ressemble à un rapport sur la page. Renvoie { removed, legacy }.
+function purgeReportBlocks_(pageId) {
+  const parts = findReportParts_(pageId);
+  const ids = parts.roots.concat(parts.states, parts.legacy);
+  ids.forEach(deleteBlockQuiet_);
+  return { removed: ids.length, legacy: parts.legacy.length };
+}
+
 function applyChanges_(c) {
   const pageId = c.pageId;
   const warnings = [];
@@ -727,10 +736,16 @@ function applyChanges_(c) {
   } catch (err) {
     if (!(err instanceof ApiError_) || (err.code !== 'STATE_MISSING' && err.code !== 'STATE_CORRUPT')) throw err;
     warnings.push({ code: err.code, message: err.message + ' : rapport recréé' });
-    findReportBlocks_(pageId).forEach(deleteBlockQuiet_);
+    purgeReportBlocks_(pageId);
     cacheClearState_(pageId);
   }
   const isNew = !state;
+  if (isNew && !warnings.length) {
+    // Aucun rapport lisible : on retire ce qui traîne (ancien rapport en callout, bloc de données orphelin)
+    // pour ne jamais laisser deux rapports côte à côte.
+    const old = purgeReportBlocks_(pageId);
+    if (old.legacy) warnings.push({ code: 'LEGACY_REPORT_REPLACED', message: 'Ancien format de rapport remplacé par la nouvelle structure' });
+  }
   if (isNew) state = emptyState_();
   const reset = isNew && c.baseRev > 0;     // le serveur avait perdu le rapport
 
@@ -906,7 +921,7 @@ function applyChanges_(c) {
   // 7) En-tête, révision, état
   if (mutated) {
     if (!isNew) {
-      if (headerChanged) notion_('PATCH', '/blocks/' + state.meta.callout, { callout: { rich_text: headerTitle_(state) } });
+      if (headerChanged) notion_('PATCH', '/blocks/' + state.meta.root, { toggle: { rich_text: headerTitle_(state) } });
       notion_('PATCH', '/blocks/' + state.meta.meta, { paragraph: { rich_text: metaText_(state) } });
     }
     state.rev += 1;
@@ -967,15 +982,15 @@ function testNotionCapabilities() {
   const pageId = normId_(cfg_('TEST_PAGE_ID'));
   const warnings = [];
   const root = appendPlain_(pageId, [{
-    object: 'block', type: 'callout',
-    callout: {
-      rich_text: rt_('TEST capacités — à supprimer'), icon: { type: 'emoji', emoji: '🧪' },
+    object: 'block', type: 'toggle',
+    toggle: {
+      rich_text: rt_('TEST capacités — à supprimer'),
       children: [blockParagraph_(rt_('A')), blockParagraph_(rt_('C'))]
     }
   }])[0].id;
   try {
     const kids = listChildren_(root);
-    Logger.log('1. Création callout + 2 enfants : OK (%s enfants)', kids.length);
+    Logger.log('1. Création toggle + 2 enfants : OK (%s enfants)', kids.length);
 
     const mid = insertAfter_(root, kids[0].id, [blockParagraph_(rt_('B'))], warnings);
     const order = listChildren_(root).map(function (k) { return plain_(k.paragraph.rich_text); }).join('');

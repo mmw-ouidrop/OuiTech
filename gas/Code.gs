@@ -42,6 +42,7 @@
  *                    incrémentale dans Notion (route 3) — le contrat complet
  *                    des requêtes/réponses est décrit en tête de ce fichier
  *    Auth.gs         connexion par mot de passe (2 niveaux), sessions signées
+ *    Methods.gs      fiches méthodes (lecture seule) : liste, fiche, médias
  *    appsscript.json manifeste
  *
  *  ROUTES
@@ -52,6 +53,7 @@
  *           → mission + template (templateBlocks, schema) + état du rapport
  *    GET  ?action=getReport&pageId=…&sinceRev=N&clientId=…&name=…&session=…
  *           → { unchanged:true } ou l'état du rapport (relève des collègues)
+ *    GET  ?action=methods | method | methodMedia   → fiches méthodes (voir Methods.gs)
  *    POST { action:"uploadMedia", session, fileData, fileName, mimeType,
  *           mediaId?, reference? }                 → { fileId, ... }
  *    POST { action:"syncReport", … }               → voir Report.gs
@@ -83,12 +85,17 @@ const NOTION_API = 'https://api.notion.com/v1';
 const NOTION_VERSION = '2022-06-28';
 const TZ = 'Europe/Paris';
 
-// Le rapport est un bloc « callout » ayant cette icône ET un titre commençant
-// par ce texte. getIntervention l'ignore (il n'est pas du template) mais continue
-// de lire ce qui l'entoure : des blocs ajoutés par un responsable avant OU après
-// le rapport sont donc bien repris dans le formulaire.
-const REPORT_MARKER = "Rapport d'intervention";
-const REPORT_ICON = '📋';
+// Structure de la page Notion : trois toggles frères, dans cet ordre.
+//   ▸ Template CR intervention                        (écrit par le responsable ; tout titre commençant par « Template »)
+//   ▸ CR intervention — En cours | Validé             (le rapport : un toggle dont le titre commence par ce texte)
+//   ▸ Données de synchronisation (ne pas modifier)    (l'état JSON, voir Report.gs)
+// getIntervention ignore le rapport et les données (ce n'est pas du template) mais continue de lire ce
+// qui les entoure : des blocs ajoutés par un responsable avant OU après sont repris dans le formulaire.
+// Ancien format (jusqu'à l'étape 5) : un callout 📋 « Rapport d'intervention » contenant tout ; il est
+// reconnu pour être remplacé par la nouvelle structure à la première synchronisation.
+const REPORT_MARKER = 'CR intervention';
+const LEGACY_REPORT_MARKER = "Rapport d'intervention";
+const LEGACY_REPORT_ICON = '📋';
 
 const DRIVE_ID_RE = /^[A-Za-z0-9_-]{20,80}$/;   // forme d'un fileId Drive
 const TEMP_RETENTION_DAYS = 14;                  // purge des fichiers de transit orphelins
@@ -159,6 +166,12 @@ function doGet(e) {
         return ok_(getIntervention_(p.id));
       case 'getReport':
         return ok_(getReport_(p));
+      case 'methods':
+        return ok_(getMethods_(p));
+      case 'method':
+        return ok_(getMethod_(p));
+      case 'methodMedia':
+        return ok_(getMethodMedia_(p));
       default:
         throw new ApiError_('UNKNOWN_ACTION', 'Action GET inconnue : ' + p.action);
     }
@@ -305,9 +318,10 @@ function getIntervention_(idParam) {
   //    ou par un collègue) : son état est joint, pour reprendre où il en est.
   let report = null;
   const reportBlock = blocks.filter(isReportBlock_)[0];
+  const stateBlock = blocks.filter(isStateBlock_)[0];
   if (reportBlock) {
     try {
-      const state = loadState_(page.id, { calloutId: reportBlock.id });
+      const state = loadState_(page.id, { rootId: reportBlock.id, stateId: stateBlock ? stateBlock.id : null });
       report = state ? publicState_(state, pageEditors_(page.id)) : null;
     } catch (err) {
       ctx.warnings.push({ code: 'REPORT_STATE_ERROR', message: err.message });
@@ -493,7 +507,7 @@ function fetchBlocks_(blockId, depth) {
 
   if (depth < MAX_NEST_DEPTH) {
     out.forEach(function (b) {
-      if (b.has_children && isNestable_(b)) {
+      if (b.has_children && isNestable_(b) && !isReportBlock_(b) && !isStateBlock_(b)) {
         b._children = fetchBlocks_(b.id, depth + 1);
       }
     });
@@ -520,7 +534,7 @@ function isTemplateContainer_(b) {
 function convertBlocks_(blocks, ctx, depth) {
   for (let i = 0; i < blocks.length; i++) {
     const b = blocks[i];
-    if (depth === 0 && isReportBlock_(b)) continue;   // le rapport n'est pas du template
+    if (depth === 0 && (isReportBlock_(b) || isStateBlock_(b) || isLegacyReportBlock_(b))) continue;   // ni le rapport ni ses données ne sont du template
     if (isTemplateContainer_(b)) {
       if (b._children) convertBlocks_(b._children, ctx, depth + 1);
       continue;
@@ -720,26 +734,40 @@ function assertInRoot_(file) {
 
 /* ── Rapport existant : repérage ─────────────────────────────────────────────── */
 
+const titleOf_ = function (b) {
+  return b && b[b.type] ? plain_(b[b.type].rich_text).trim().toLowerCase() : '';
+};
+
 function isReportBlock_(b) {
+  return !!b && b.type === 'toggle' && titleOf_(b).indexOf(REPORT_MARKER.toLowerCase()) === 0;
+}
+
+function isStateBlock_(b) {
+  return !!b && b.type === 'toggle' && titleOf_(b).indexOf(STATE_TOGGLE_TITLE.toLowerCase()) === 0;
+}
+
+function isLegacyReportBlock_(b) {
   if (!b || b.type !== 'callout') return false;
   const c = b.callout || {};
   const icon = c.icon && c.icon.type === 'emoji' ? c.icon.emoji : null;
-  return icon === REPORT_ICON &&
-    plain_(c.rich_text).trim().toLowerCase().indexOf(REPORT_MARKER.toLowerCase()) === 0;
+  return icon === LEGACY_REPORT_ICON && titleOf_(b).indexOf(LEGACY_REPORT_MARKER.toLowerCase()) === 0;
 }
 
-function findReportBlocks_(pageId) {
-  const ids = [];
+// Parcourt les blocs de la page : rapports, blocs de données, anciens rapports (ids).
+function findReportParts_(pageId) {
+  const parts = { roots: [], states: [], legacy: [] };
   let cursor = null;
   do {
     const query = '?page_size=100' + (cursor ? '&start_cursor=' + encodeURIComponent(cursor) : '');
     const res = notion_('GET', '/blocks/' + pageId + '/children' + query);
     (res.results || []).forEach(function (blk) {
-      if (isReportBlock_(blk)) ids.push(blk.id);
+      if (isReportBlock_(blk)) parts.roots.push(blk.id);
+      else if (isStateBlock_(blk)) parts.states.push(blk.id);
+      else if (isLegacyReportBlock_(blk)) parts.legacy.push(blk.id);
     });
     cursor = res.has_more ? res.next_cursor : null;
   } while (cursor);
-  return ids;
+  return parts;
 }
 
 /* ── Photos : Drive → Notion (API File Upload) ───────────────────────────────── */

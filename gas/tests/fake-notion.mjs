@@ -10,6 +10,7 @@ import assert from 'node:assert/strict';
 export const ROOT = 'ROOT_FOLDER_ID_0000000000000000';
 export const PAGE = 'aaaaaaaabbbbccccddddeeeeeeeeeeee';
 export const DB = '11111111222233334444555555555555';
+export const MDB = '34937d20ee35803c8909cf0fd8cda157';
 export const TOKEN = 'tok_test';
 export const PW_TECH = 'tech-pass-12345';
 export const PW_SUPPORT = 'support-pass-67890';
@@ -60,7 +61,7 @@ export function makeWorld() {
     const id = w.id();
     const { children, ...rest } = spec[spec.type];
     const b = { object: 'block', id, type: spec.type, parent: parentId, archived: false, [spec.type]: withPlain(rest) };
-    if (spec.type === 'image') {
+    if (spec.type === 'image' && !rest.external && !rest.file) {
       const fu = rest.file_upload && w.uploads[rest.file_upload.id];
       assert.ok(fu && fu.sent, 'image : file_upload inconnu ou non envoyé');
       assert.ok(!fu.attached, 'image : file_upload déjà utilisé');
@@ -80,6 +81,35 @@ export function makeWorld() {
   w.kids[key(PAGE)] = [];
   w.blocks[key(PAGE)] = { id: key(PAGE), type: 'page' };
 
+  /* ── Fiches méthodes : base MDB, pages, fichiers téléchargeables ── */
+  w.methodPages = [];
+  w.files = {};                    // url → { bytes:number[], mime, status? }
+  w.methodQueryPageSize = 100;
+  w.addMethod = ({ title, groups = [], status = 'Terminé', doc = '', folder = '', notes = '', edited = '2026-10-19T08:00:00Z', support = [], medias = [], blocks = [], archived = false, parentDb }) => {
+    const id = w.id();
+    const nid = norm(id);
+    w.blocks[id] = { id, type: 'page' };
+    w.kids[id] = [];
+    const page = {
+      id, archived, url: 'https://notion.so/m', last_edited_time: edited,
+      parent: { type: 'database_id', database_id: dash(parentDb || MDB) },
+      properties: {
+        Nom: { type: 'title', title: [{ plain_text: title }] },
+        Ensemble: { type: 'multi_select', multi_select: groups.map((name) => ({ name })) },
+        Statut: { type: 'status', status: { name: status } },
+        Doc: { type: 'url', url: doc || null },
+        Dossier: { type: 'url', url: folder || null },
+        Notes: { type: 'rich_text', rich_text: notes ? [{ plain_text: notes }] : [] },
+        Support: { type: 'files', files: support.map((f) => ({ name: f.name, type: 'file', file: { url: f.url } })) },
+        Medias: { type: 'files', files: medias.map((f) => ({ name: f.name, type: 'file', file: { url: f.url } })) }
+      }
+    };
+    w.methodPages.push(page);
+    blocks.forEach((spec) => { const b = create(id, spec); w.kids[id].push(b.id); });
+    return { id, nid, page };
+  };
+  w.addFile = (url, bytes, mime = 'image/png') => { w.files[url] = { bytes: [...bytes], mime }; };
+
   const rtS = (t) => [{ type: 'text', text: { content: t } }];
   w.rt = rtS;
   // Page de mission : H1, 2 composants JSON, 1 to_do, 1 JSON invalide
@@ -91,25 +121,21 @@ export function makeWorld() {
     { type: 'code', code: { language: 'json', rich_text: rtS('{ pas du json') } }
   ]);
 
-  // Aide pour les tests : arbre du rapport lisible.
-  w.reportCallout = () => w.kids[key(PAGE)].map((i) => w.blocks[i]).find((b) => b.type === 'callout' && !b.archived);
+  // Aide pour les tests : arbre du rapport lisible. Le rapport est un toggle « CR intervention… » au niveau de la
+  // page ; ses données sont un toggle frère « Données de synchronisation… ».
+  const topLevel = () => w.kids[key(PAGE)].map((i) => w.blocks[i]).filter((b) => !b.archived);
+  const title = (b) => (b[b.type].rich_text || []).map((t) => t.plain_text).join('');
+  w.reportRoot = () => topLevel().find((b) => b.type === 'toggle' && title(b).startsWith('CR intervention'));
+  w.reportCallout = w.reportRoot;                      // ancien nom, conservé pour les tests existants
+  w.stateToggle = () => topLevel().find((b) => b.type === 'toggle' && title(b).startsWith('Données de synchronisation'));
   w.childrenOf = (id) => w.kids[key(id)].map((i) => w.blocks[i]).filter((b) => !b.archived);
   w.text = (b) => (b[b.type].rich_text || []).map((t) => t.plain_text).join('');
-  w.visibleReport = () => {
-    const c = w.reportCallout();
-    return w.childrenOf(c.id).filter((b) => b.type !== 'toggle');
-  };
+  w.visibleReport = () => w.childrenOf(w.reportRoot().id);
   w.stateJson = () => {
-    const c = w.reportCallout();
-    const t = w.childrenOf(c.id).find((b) => b.type === 'toggle');
-    const code = w.childrenOf(t.id).find((b) => b.type === 'code');
+    const code = w.childrenOf(w.stateToggle().id).find((b) => b.type === 'code');
     return code[code.type].rich_text.map((x) => x.plain_text).join('');
   };
-  w.stateRich = () => {
-    const c = w.reportCallout();
-    const t = w.childrenOf(c.id).find((b) => b.type === 'toggle');
-    return w.childrenOf(t.id).find((b) => b.type === 'code').code.rich_text;
-  };
+  w.stateRich = () => w.childrenOf(w.stateToggle().id).find((b) => b.type === 'code').code.rich_text;
   w.writes = () => w.calls.filter((c) => c.method !== 'GET' && !/\/query$/.test(c.path) && !c.path.startsWith('/file_uploads'));
   w.count = (method, re) => w.calls.filter((c) => c.method === method && re.test(c.path)).length;
 
@@ -118,6 +144,13 @@ export function makeWorld() {
 
   const UrlFetchApp = {
     fetch(url, opts = {}) {
+      if (!url.startsWith('https://api.notion.com/')) {
+        w.calls.push({ method: 'GET', path: url, external: true });
+        const f = w.files[url];
+        if (!f) return { getResponseCode: () => 403, getContentText: () => 'expired', getHeaders: () => ({}) };
+        return { getResponseCode: () => f.status || 200, getContentText: () => '', getHeaders: () => ({}), getBlob: () => newBlob(f.bytes, f.mime, 'x') };
+      }
+      let m;
       const [p0, qs] = url.replace('https://api.notion.com/v1', '').split('?');
       const method = (opts.method || 'get').toUpperCase();
       const body = opts.payload && typeof opts.payload === 'string' ? JSON.parse(opts.payload) : opts.payload;
@@ -138,11 +171,22 @@ export function makeWorld() {
             Statut: { type: 'status', status: { name: 'À faire' } }
           } }] });
       }
+      if (method === 'POST' && p0 === `/databases/${MDB}/query`) {
+        const live = w.methodPages.filter((p) => !p.archived && norm(p.parent.database_id) === MDB);
+        const start = Number((body && body.start_cursor) || 0);
+        const size = Math.min((body && body.page_size) || 100, w.methodQueryPageSize);
+        const more = start + size < live.length;
+        return res(200, { results: live.slice(start, start + size), has_more: more, next_cursor: more ? String(start + size) : null });
+      }
+      m = p0.match(/^\/pages\/([^/]+)$/);
+      if (m && method === 'GET' && w.methodPages.some((p) => norm(p.id) === norm(m[1]))) {
+        return res(200, w.methodPages.find((p) => norm(p.id) === norm(m[1])));
+      }
       if (method === 'GET' && p0 === `/pages/${PAGE}`) {
         return res(200, { parent: { database_id: w.pageDb || dash(DB) }, archived: false });
       }
 
-      let m = p0.match(/^\/blocks\/([^/]+)\/children$/);
+      m = p0.match(/^\/blocks\/([^/]+)\/children$/);
       if (m) {
         const pid = key(m[1]);
         const parent = w.blocks[pid];
@@ -181,6 +225,11 @@ export function makeWorld() {
         const id = key(m[1]);
         const b = w.blocks[id];
         if (!b) return err(404, 'Could not find block with ID: ' + m[1]);
+        if (method === 'GET') {
+          if (dead(b)) return err(404, 'Could not find block with ID: ' + m[1]);
+          const pb = w.blocks[b.parent];
+          return res(200, { ...b, parent: pb && pb.type === 'page' ? { type: 'page_id', page_id: b.parent } : { type: 'block_id', block_id: b.parent } });
+        }
         if (method === 'PATCH') {
           if (dead(b)) return err(400, "Can't edit block that is archived. You must unarchive the block before editing.");
           const t = Object.keys(body).find((k) => k !== 'archived');
@@ -266,6 +315,7 @@ export function makeWorld() {
       computeHmacSha256Signature: (data, key) => [...crypto.createHmac('sha256', key).update(String(data)).digest()].map((b) => (b > 127 ? b - 256 : b)),
       base64EncodeWebSafe: (x) => (typeof x === 'string' ? Buffer.from(x, 'utf8') : Buffer.from(x.map((b) => (b < 0 ? b + 256 : b)))).toString('base64').replace(/\+/g, '-').replace(/\//g, '_'),
       base64DecodeWebSafe: (s) => { assert.equal(s.length % 4, 0, 'base64DecodeWebSafe : bourrage attendu'); return [...Buffer.from(s.replace(/-/g, '+').replace(/_/g, '/'), 'base64')].map((b) => (b > 127 ? b - 256 : b)); },
+      base64Encode: (x) => Buffer.from(x.map((b) => (b < 0 ? b + 256 : b))).toString('base64'),
       base64Decode: (s) => { if (/[^A-Za-z0-9+/=]/.test(s)) throw new Error('bad b64'); return [...Buffer.from(s, 'base64')]; },
       formatDate: (d) => new Date(d).toISOString().slice(0, 16).replace('T', ' ')
     },

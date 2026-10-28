@@ -21,6 +21,11 @@ Erreurs d'accès sur toute autre route : `UNAUTHORIZED` (absente / invalide), `S
 | `?action=ping` | Sans token. Vérifie que le déploiement répond. |
 | `?action=getIntervention&id=FI-252` | Mission complète : propriétés, template, schéma, rapport partagé. |
 | `?action=getReport&pageId=…&sinceRev=N&clientId=…&name=Prénom Nom` | Relève légère (toutes les ~60 s tant que la fiche est ouverte). |
+| `?action=methods&sinceRev=…` | Fiches méthodes publiées : `{ rev, items:[{id,title,groups,status,updated,summary}] }` ou `{ unchanged:true, rev }`. |
+| `?action=method&id=<pageId>&sinceEdited=…` | Une fiche : propriétés, `links`, `support`, `media`, `hero`, `sections:[{title,kind,nodes}]` ou `{ unchanged:true }`. |
+| `?action=methodMedia&page=<pageId>&key=<clé>&mode=data\|url` | Image / fichier d'une fiche : `{name,mime,size,data(base64)}` (≤ 6 Mo), `{…,tooLarge:true,url}` ou, en `mode=url`, `{name,url}` (lien frais ≈ 1 h). |
+
+Détail des fiches méthodes (nœuds, sections, propriétés de script) : en-tête de `Methods.gs`.
 
 ### getIntervention → `data`
 `id, reference, title, url, lastEdited, properties[], templateBlocks[], warnings[]`, plus :
@@ -104,6 +109,6 @@ photoErrors[], photosRemaining, cleanup`.
 
 ## Codes d'erreur
 `UNAUTHORIZED` · `BAD_REQUEST` · `NOT_FOUND` · `FORBIDDEN` · `AUTHOR_REQUIRED` · `UNSUPPORTED_TYPE` ·
-`MEDIA_NOT_FOUND` · `BUSY` (verrou occupé > 30 s) · `STATE_TOO_LARGE` · `STATE_DESYNC` ·
+`MEDIA_NOT_FOUND` · `MEDIA_UNAVAILABLE` · `NOTION_FORBIDDEN` · `BUSY` (verrou occupé > 30 s) · `STATE_TOO_LARGE` · `STATE_DESYNC` ·
 `NOTION_ERROR` · `NOTION_UNAVAILABLE` · `NOTION_UPLOAD_FAILED` · `CONFIG_MISSING` · `INTERNAL`.
 (`STATE_MISSING` / `STATE_CORRUPT` ne sortent pas : le rapport est alors reconstruit, avec un avertissement.)

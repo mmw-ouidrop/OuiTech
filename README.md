@@ -22,8 +22,8 @@ Flux : **PWA ⇄ Google Apps Script ⇄ Notion**, avec Drive comme zone de trans
 ## 2. Google Apps Script
 
 1. Drive : créer le dossier racine des photos (aucun partage nécessaire) → copier son ID (fin de l'URL).
-2. script.google.com ▸ nouveau projet avec **trois fichiers** : coller `gas/Code.gs` (fichier `Code`),
-   `gas/Report.gs` (fichier `Report`) et `gas/Auth.gs` (fichier `Auth`). Afficher le manifeste
+2. script.google.com ▸ nouveau projet avec **quatre fichiers** : coller `gas/Code.gs` (fichier `Code`),
+   `gas/Report.gs` (fichier `Report`), `gas/Auth.gs` (fichier `Auth`) et `gas/Methods.gs` (fichier `Methods`). Afficher le manifeste
    (Paramètres du projet ▸ « Afficher le fichier appsscript.json ») et y coller `gas/appsscript.json`.
    Le contrat d'API (requêtes, fusion, codes d'erreur) est dans `gas/API.md`.
 3. Paramètres du projet ▸ **Propriétés du script** :
@@ -93,8 +93,36 @@ pour que les données ne soient pas purgées par Safari.
 ### Menu et pages
 
 Menu latéral (tiroir sur téléphone, colonne fixe sur grand écran) : Accueil · Fiches et CR · Méthodes · Machines ·
-Racks et casiers KO · Inventaires · Réglages. **Méthodes, Machines, Racks et Inventaires sont annoncés mais pas encore
-développés** (étapes suivantes). *Réglages* : nom, thème, taille du texte, synchronisation, stockage, déconnexion.
+Racks et casiers KO · Inventaires · Réglages. **Machines, Racks et Inventaires sont annoncés mais pas encore
+développés** (étapes suivantes) ; **Méthodes** est disponible (section suivante). *Réglages* : nom, thème, taille du texte, synchronisation, stockage, déconnexion.
+
+### Méthodes (fiches de maintenance)
+
+Source : la base Notion « MO Maintenance Physique » (ID par défaut `34937d20ee35803c8909cf0fd8cda157`, propriété de script
+`METHODS_DB_ID` pour en changer). **Connectez l'intégration à cette base** (⋯ ▸ Connexions). Lecture seule.
+
+- **Liste** : fiches regroupées par *Ensemble* (une fiche de plusieurs ensembles apparaît dans chacun ; sans ensemble → « Autres »),
+  recherche instantanée (titre, ensemble, résumé), statut en pastille. Les fiches au statut **« Pas commencé »** ne sont pas
+  publiées (réglable : `METHODS_HIDDEN_STATUS`, noms séparés par `|` ; `METHODS_HIDDEN_TITLES` pour masquer des fiches par leur titre,
+  par exemple « CR Interventions » qui est un mémo interne).
+- **Fiche** (style tutoriel) : titre, ensembles, statut, date de mise à jour · photo ou vidéo principale en tête (colonne
+  *Medias*, sinon première image/vidéo du corps) · encadré « À savoir » (colonne *Notes*, liens cliquables) · boutons **Document
+  détaillé** (*Doc*), **Dossier de photos et vidéos** (*Dossier*) et **Support** (fichiers de la colonne *Support*, PDF ouvert
+  depuis l'appareil) · sommaire · le corps de la page découpé par grands titres. Les titres reconnus par leur nom prennent une
+  forme adaptée : **Matériel** et **Outils** → listes à cocher ; **Étapes / Procédure / Réalisation / Intervention / Dépannage** →
+  étapes numérotées avec leurs photos ; **Avant de commencer / Sécurité / Prérequis** → encadré d'alerte ; **Résumé / Objectif /
+  Principe** → encadré. Tout le reste (paragraphes, listes, images, vidéos, fichiers, tableaux, citations, toggles) s'affiche tel quel.
+  Pour qu'une fiche rende bien, structurez-la avec des titres `## Matériel`, `## Outils`, `## Étapes` (liste numérotée, photo sous chaque étape).
+- **Hors ligne** : à l'ouverture (avec réseau), la fiche et ses images sont gardées sur l'appareil ; le bouton **Tout télécharger**
+  de la liste récupère toutes les fiches d'un coup (à faire en Wi-Fi avant une tournée). **Libérer l'espace** vide ce cache
+  (sans toucher aux CR). Les adresses de fichiers Notion expirent après ~1 h : l'application ne les garde jamais, elle
+  télécharge le fichier via le serveur (images et PDF jusqu'à 6 Mo). Plus gros (vidéo hébergée par Notion) : lien frais demandé
+  à la lecture, **en ligne seulement**. Pour des vidéos lisibles partout, préférez un lien YouTube/Vimeo/Loom (intégré) ou le
+  dossier Drive.
+- Propriétés de script facultatives si vos colonnes portent d'autres noms : `METHODS_PROP_GROUP` (Ensemble), `METHODS_PROP_STATUS`
+  (Statut), `METHODS_PROP_DOC` (Doc), `METHODS_PROP_FOLDER` (Dossier), `METHODS_PROP_SUPPORT` (Support), `METHODS_PROP_MEDIAS`
+  (Medias), `METHODS_PROP_NOTES` (Notes), `METHODS_PROP_ERRORS` (Erreurs Associées).
+- Test dans l'éditeur Apps Script : exécuter `testMethods()` (nombre de fiches par ensemble, exemple de fiche).
 
 ### Utilisation sur le terrain
 
@@ -119,13 +147,13 @@ développés** (étapes suivantes). *Réglages* : nom, thème, taille du texte, 
   *Aller à…*. Ces réglages sont propres à l'appareil et à la mission.
 - **Thème** : Auto / Clair / Sombre (*Réglages*). Auto suit le téléphone.
 
-### Données locales (IndexedDB, schéma v2)
+### Données locales (IndexedDB, schéma v3)
 
 Une fiche locale contient les saisies (`fields`, avec heure et auteur, marquées `dirty` tant que le serveur ne les a pas
 acquittées), les champs ajoutés, les demandes de suppression, le dernier état partagé du serveur, la demande de
 validation/réouverture en attente et le suivi des envois (essais, prochain essai : attente 30 s ×2, jusqu'à 15 min).
-Les photos sont dans une file séparée (`media_queue`, Blob). La migration depuis la v1 est automatique. Rien n'est
-supprimé automatiquement de l'appareil.
+Les photos sont dans une file séparée (`media_queue`, Blob). La migration depuis la v1 est automatique. Les fiches méthodes ont leurs propres
+stores (`methods_index`, `methods`, `method_media`). Rien n'est supprimé automatiquement de l'appareil.
 
 > **Note de vérification** : le code Vue n'a pas pu être compilé dans l'environnement de développement (pas d'accès au
 > registre npm) ; il a été contrôlé par analyse de syntaxe, mais le premier `npm run build` (GitHub Actions) est le vrai test.
@@ -173,10 +201,19 @@ les nouveaux endpoints (envoi de fichiers) fonctionnent sans changer de version.
 
 ## Comment fonctionne le rapport partagé
 
-Le rapport est **un seul bloc 📋** en bas de la page Notion : titre « Rapport d'intervention — En cours | Validé »,
-ligne grise « Dernière modification : Prénom Nom · date », un bloc par élément du template (mis à jour **en place**),
-photos sous leur champ, et un bloc replié « Données de synchronisation » (JSON : c'est lui, pas le texte visible,
-qui fait foi). Plusieurs techniciens écrivent dans le même rapport ; les saisies sont fusionnées champ par champ
+La page Notion contient **trois toggles frères**, dans cet ordre :
+
+```
+▸ Template CR intervention                       ← à écrire par vous (le formulaire ; titre commençant par « Template »)
+▸ CR intervention — En cours | Validé            ← le rapport, écrit par l'application
+▸ Données de synchronisation (ne pas modifier)   ← JSON : c'est lui, pas le texte visible, qui fait foi
+```
+
+Le rapport contient la ligne grise « Dernière modification : Prénom Nom · date », un bloc par élément du
+template (mis à jour **en place**) et les photos sous leur champ. Notion ne permet pas à l'API de laisser un
+toggle ouvert ou fermé : à vous de replier ce que vous voulez masquer. Les rapports de l'ancien format
+(callout 📋) sont remplacés à la première synchronisation suivant la mise à jour (les appareils renvoient
+leurs saisies ; un avertissement est affiché). Plusieurs techniciens écrivent dans le même rapport ; les saisies sont fusionnées champ par champ
 (la plus récente gagne, la valeur écrasée est signalée à son auteur), les photos s'additionnent.
 Les responsables peuvent ajouter des blocs au template à tout moment (même après le début du rapport) :
 les techniciens les récupèrent avec « Actualiser » sans perdre leurs saisies.

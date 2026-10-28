@@ -89,6 +89,12 @@ export const api = {
   getReport: ({ pageId, sinceRev, clientId, name }) =>
     get({ action: 'getReport', pageId, sinceRev: String(sinceRev ?? ''), clientId, name }, 20000),
 
+  // Fiches méthodes (lecture seule). Les deux premières ne coûtent presque rien quand rien n'a changé.
+  methods: ({ sinceRev } = {}) => get({ action: 'methods', sinceRev: sinceRev || '' }, 30000),
+  method: ({ id, sinceEdited }) => get({ action: 'method', id, sinceEdited: sinceEdited || '' }, 45000),
+  // Image / fichier d'une fiche : { name, mime, size, data } | { …, tooLarge:true, url } | (mode 'url') { name, url }
+  methodMedia: ({ page, key, mode }) => get({ action: 'methodMedia', page, key, mode: mode || 'data' }, 60000),
+
   // Peut durer longtemps (transfert des photos vers Notion) : le GAS s'arrête à 6 min.
   syncReport: (payload) => post({ action: 'syncReport', ...payload }, 330000)
 }

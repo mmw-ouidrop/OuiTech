@@ -23,6 +23,12 @@
 //                  → 'done' (présente dans le rapport Notion) ; 'failed' (abandonnée)
 //    uploadAttempts, lastError
 //
+//  Store `methods_index` — liste des fiches méthodes : une ligne { key:'list', rev, items, fetchedAt }
+//  Store `methods`       — fiches méthodes lues (corps complet) : id PK, title, updated, fetchedAt
+//  Store `method_media`  — images / fichiers des fiches : id = `pageId|clé` PK, pageId (index),
+//                          blob, mime, name, size, fetchedAt. Les adresses Notion expirent au bout
+//                          d'environ une heure : on ne garde jamais d'adresse, seulement le fichier.
+//
 //  `createStore(nom)` crée une base indépendante (tests à deux appareils) ; les
 //  exports nommés ci-dessous sont ceux de la base de l'application.
 // ============================================================================
@@ -99,6 +105,12 @@ export function createStore(name = 'ouidrop-interventions') {
         row.uploadAttempts = 0
       })
     })
+
+  db.version(3).stores({
+    methods_index: 'key',
+    methods: 'id, title',
+    method_media: 'id, pageId'
+  })
 
   /* ── utilitaires internes (à appeler dans une transaction) ── */
   const rowsOf = (id) => db.media_queue.where('interventionId').equals(id).toArray()
@@ -420,7 +432,40 @@ export function createStore(name = 'ouidrop-interventions') {
       await db.interventions.delete(id)
     })
 
+  /* ───────────────────────────── Fiches méthodes ───────────────────────────── */
+
+  const getMethodsList = () => db.methods_index.get('list')
+  const saveMethodsList = (list) => db.methods_index.put({ key: 'list', rev: list.rev, items: list.items, fetchedAt: now() })
+  const touchMethodsList = () => db.methods_index.update('list', { fetchedAt: now() })
+
+  const getMethod = (id) => db.methods.get(id)
+  const listCachedMethodIds = async () => new Set(await db.methods.toCollection().primaryKeys())
+  const saveMethod = (m) => db.methods.put({ ...m, fetchedAt: now() })
+  const touchMethod = (id) => db.methods.update(id, { fetchedAt: now() })
+
+  const mediaId = (pageId, key) => `${pageId}|${key}`
+  const getMethodMedia = (pageId, key) => db.method_media.get(mediaId(pageId, key))
+  const listMethodMediaKeys = async (pageId) =>
+    new Set((await db.method_media.where('pageId').equals(pageId).primaryKeys()).map((id) => id.slice(pageId.length + 1)))
+  const saveMethodMedia = (pageId, key, { blob, mime, name }) =>
+    db.method_media.put({ id: mediaId(pageId, key), pageId, blob, mime: mime || blob.type, name: name || '', size: blob.size, fetchedAt: now() })
+
+  // Efface tout ce qui vient des fiches méthodes (les missions et leurs photos ne sont pas touchées).
+  const clearMethodsCache = () =>
+    db.transaction('rw', db.methods_index, db.methods, db.method_media, async () => {
+      await db.methods_index.clear(); await db.methods.clear(); await db.method_media.clear()
+    })
+
+  // Poids du cache des fiches (octets de médias + nombre de fiches).
+  async function methodsCacheStats() {
+    let bytes = 0
+    await db.method_media.each((r) => { bytes += r.size || 0 })
+    return { methods: await db.methods.count(), media: await db.method_media.count(), bytes }
+  }
+
   return {
+    getMethodsList, saveMethodsList, touchMethodsList, getMethod, listCachedMethodIds, saveMethod, touchMethod,
+    getMethodMedia, listMethodMediaKeys, saveMethodMedia, clearMethodsCache, methodsCacheStats,
     db, getIntervention, listInterventions, findByReference, listPhotos, saveMission, setFields,
     addPhoto, removePhoto, addCustomField, removeCustomField, setReportStatus, resolveConflict,
     dismissNotice, listNeedingSync, beginSync, endSync, setPhotoUploaded, failPhoto,
@@ -432,6 +477,8 @@ export function createStore(name = 'ouidrop-interventions') {
 
 const store = createStore(globalThis.__OUIDROP_DB_NAME__ || 'ouidrop-interventions')
 export const {
+  getMethodsList, saveMethodsList, touchMethodsList, getMethod, listCachedMethodIds, saveMethod, touchMethod,
+  getMethodMedia, listMethodMediaKeys, saveMethodMedia, clearMethodsCache, methodsCacheStats,
   db, getIntervention, listInterventions, findByReference, listPhotos, saveMission, setFields,
   addPhoto, removePhoto, addCustomField, removeCustomField, setReportStatus, resolveConflict,
   dismissNotice, listNeedingSync, beginSync, endSync, setPhotoUploaded, failPhoto,
