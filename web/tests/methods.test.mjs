@@ -175,3 +175,18 @@ test('aides : listes regroupées, vidéos intégrables, adresses cliquables, ton
   assert.deepEqual(linkifySegments('Voir https://a.fr/x). Merci'), [{ t: 'Voir ' }, { t: 'https://a.fr/x', h: 'https://a.fr/x' }, { t: '). Merci' }])
   assert.equal(statusTone('Terminé'), 'done'); assert.equal(statusTone('A mettre à jour'), 'danger'); assert.equal(statusTone('En cours'), 'info')
 })
+
+test('fiche enregistrée dans un ancien format : relue en entier même si Notion n’a pas bougé (carrousel, commentaires)', async () => {
+  const { w, service, store } = setup(); const m = seedOne(w)
+  const fresh = await service.loadMethod(m.nid)
+  assert.equal(fresh.method.v, 2); assert.ok(Array.isArray(fresh.method.gallery))
+  const { gallery, comments, commentsEnabled, v, ...old } = fresh.method         // ce que l'ancienne version avait enregistré
+  await store.saveMethod(old)
+  w.calls.length = 0
+  const again = await service.loadMethod(m.nid)
+  assert.equal(again.method.v, 2)
+  assert.ok(w.calls.some((c) => /children/.test(c.path)), 'corps relu')
+  w.calls.length = 0
+  await service.loadMethod(m.nid)
+  assert.equal(w.calls.filter((c) => /children/.test(c.path)).length, 0, 'ensuite : plus de relecture tant que Notion ne change pas')
+})

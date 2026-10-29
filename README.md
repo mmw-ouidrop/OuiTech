@@ -22,8 +22,9 @@ Flux : **PWA ⇄ Google Apps Script ⇄ Notion**, avec Drive comme zone de trans
 ## 2. Google Apps Script
 
 1. Drive : créer le dossier racine des photos (aucun partage nécessaire) → copier son ID (fin de l'URL).
-2. script.google.com ▸ nouveau projet avec **quatre fichiers** : coller `gas/Code.gs` (fichier `Code`),
-   `gas/Report.gs` (fichier `Report`), `gas/Auth.gs` (fichier `Auth`) et `gas/Methods.gs` (fichier `Methods`). Afficher le manifeste
+2. script.google.com ▸ nouveau projet avec **six fichiers** : coller `gas/Code.gs` (fichier `Code`),
+   `gas/Report.gs` (fichier `Report`), `gas/Auth.gs` (fichier `Auth`), `gas/Methods.gs` (fichier `Methods`),
+   `gas/Machines.gs` (fichier `Machines`) et `gas/Racks.gs` (fichier `Racks`). Afficher le manifeste
    (Paramètres du projet ▸ « Afficher le fichier appsscript.json ») et y coller `gas/appsscript.json`.
    Le contrat d'API (requêtes, fusion, codes d'erreur) est dans `gas/API.md`.
 3. Paramètres du projet ▸ **Propriétés du script** :
@@ -93,8 +94,8 @@ pour que les données ne soient pas purgées par Safari.
 ### Menu et pages
 
 Menu latéral (tiroir sur téléphone, colonne fixe sur grand écran) : Accueil · Fiches et CR · Méthodes · Machines ·
-Racks et casiers KO · Inventaires · Réglages. **Machines, Racks et Inventaires sont annoncés mais pas encore
-développés** (étapes suivantes) ; **Méthodes** est disponible (section suivante). *Réglages* : nom, thème, taille du texte, synchronisation, stockage, déconnexion.
+Racks et casiers KO · Inventaires · Réglages. **Inventaires est annoncé mais pas encore
+développé** ; **Méthodes**, **Machines** et **Racks et casiers KO** sont disponibles (sections suivantes). *Réglages* : nom, thème, taille du texte, synchronisation, stockage, déconnexion.
 
 ### Méthodes (fiches de maintenance)
 
@@ -105,10 +106,12 @@ Source : la base Notion « MO Maintenance Physique » (ID par défaut `34937d20e
   recherche instantanée (titre, ensemble, résumé), statut en pastille. Les fiches au statut **« Pas commencé »** ne sont pas
   publiées (réglable : `METHODS_HIDDEN_STATUS`, noms séparés par `|` ; `METHODS_HIDDEN_TITLES` pour masquer des fiches par leur titre,
   par exemple « CR Interventions » qui est un mémo interne).
-- **Fiche** (style tutoriel) : titre, ensembles, statut, date de mise à jour · photo ou vidéo principale en tête (colonne
-  *Medias*, sinon première image/vidéo du corps) · encadré « À savoir » (colonne *Notes*, liens cliquables) · boutons **Document
-  détaillé** (*Doc*), **Dossier de photos et vidéos** (*Dossier*) et **Support** (fichiers de la colonne *Support*, PDF ouvert
-  depuis l'appareil) · sommaire · le corps de la page découpé par grands titres. Les titres reconnus par leur nom prennent une
+- **Fiche** (style tutoriel) : titre, ensembles, statut, date de mise à jour · **deux icônes en haut à droite** : fichier (colonne
+  *Doc* → ouvre la méthode dans Google Docs) et dossier (colonne *Dossier* → ouvre le dossier qui la contient) · **carrousel** des
+  photos et vidéos de la colonne *Medias* **dans l'ordre de Notion** (glisser, flèches, points ; sans colonne *Medias*, la première
+  image/vidéo du corps sert de bandeau ; un lien YouTube/Vimeo/Loom collé dans *Medias* devient une vidéo intégrée) · encadré
+  « À savoir » (colonne *Notes*, liens cliquables) · boutons **Support** (fichiers de la colonne *Support*, PDF ouvert depuis
+  l'appareil) · sommaire · le corps de la page découpé par grands titres. Les titres reconnus par leur nom prennent une
   forme adaptée : **Matériel** et **Outils** → listes à cocher ; **Étapes / Procédure / Réalisation / Intervention / Dépannage** →
   étapes numérotées avec leurs photos ; **Avant de commencer / Sécurité / Prérequis** → encadré d'alerte ; **Résumé / Objectif /
   Principe** → encadré. Tout le reste (paragraphes, listes, images, vidéos, fichiers, tableaux, citations, toggles) s'affiche tel quel.
@@ -119,10 +122,57 @@ Source : la base Notion « MO Maintenance Physique » (ID par défaut `34937d20e
   télécharge le fichier via le serveur (images et PDF jusqu'à 6 Mo). Plus gros (vidéo hébergée par Notion) : lien frais demandé
   à la lecture, **en ligne seulement**. Pour des vidéos lisibles partout, préférez un lien YouTube/Vimeo/Loom (intégré) ou le
   dossier Drive.
+- **Commentaires** : en bas de chaque fiche, les techniciens publient un commentaire (1000 caractères, signé de leur nom).
+  **À faire une fois** : ajouter à la base Notion une colonne de type **Texte** nommée « Commentaires » (autre nom :
+  `METHODS_PROP_COMMENTS`). Chaque commentaire y est ajouté en fin de colonne (« Prénom Nom · 29/10/2026 08:22 », puis le texte) ;
+  au-delà de 12 000 caractères, les plus anciens sont retirés. Écrit hors ligne, il est affiché tout de suite « en attente
+  d'envoi » puis envoyé au retour du réseau (sans doublon, même si la réponse du serveur se perd).
 - Propriétés de script facultatives si vos colonnes portent d'autres noms : `METHODS_PROP_GROUP` (Ensemble), `METHODS_PROP_STATUS`
   (Statut), `METHODS_PROP_DOC` (Doc), `METHODS_PROP_FOLDER` (Dossier), `METHODS_PROP_SUPPORT` (Support), `METHODS_PROP_MEDIAS`
   (Medias), `METHODS_PROP_NOTES` (Notes), `METHODS_PROP_ERRORS` (Erreurs Associées).
 - Test dans l'éditeur Apps Script : exécuter `testMethods()` (nombre de fiches par ensemble, exemple de fiche).
+
+### Liste des machines
+
+Source : la base Notion « Liste des machines » (ID par défaut `26b37d20ee3580f3b76dc45d5073b74c`, propriété de script
+`MACHINES_DB_ID`). **Connectez l'intégration à cette base** — et aux bases liées dont vous voulez afficher le nom (régions de stock,
+clients) : sans cela, ces champs restent vides. Lecture seule.
+
+- **Liste** : machines regroupées par **région de stock**, recherche (nom, ville, adresse, n° de projet), pastille d'état
+  (« Station Bloquée »…). Les machines **hors exploitation** (colonne *En exploitation* ≠ OUI) sont masquées, avec une case pour les afficher.
+- **Fiche** : *Adresse* avec boutons **Itinéraire** (Google Maps), **Waze** et **Copier l'adresse** · **Code boîte à clés** en gros
+  caractères avec **Copier** · **Wi-Fi** : si la colonne contient « SSID : … / MDP : … », réseau et mot de passe ont chacun leur bouton
+  Copier (sinon le texte est affiché tel quel) · connexion machine et options en pastilles · colis et pièces de maintenance ·
+  autres informations du site · client, région, projet, type, mise en service, objectif de commandes · **photos du site**
+  (agrandissables) · contenu de la page Notion s'il y en a. **Toute colonne qui n'est pas prévue apparaît automatiquement** dans
+  « Informations » ; les relations « Actions » (très longues) et « Liste des projets » ne sont pas publiées.
+- **Hors ligne** : comme pour les méthodes (fiche et photos gardées à l'ouverture, **Tout télécharger**, **Libérer l'espace**).
+  ⚠ Les codes (boîte à clés, Wi-Fi) téléchargés restent sur l'appareil : verrouillez-le. Ils ne sont servis qu'à une session valide.
+- Noms de colonnes différents : propriétés de script `MACHINES_PROP_<NOM>` (liste dans l'en-tête de `Machines.gs`), `MACHINES_HIDDEN_PROPERTIES`
+  (colonnes à ne pas publier, séparées par `|`), `MACHINES_ACTIVE_YES` (valeurs signifiant « en exploitation », défaut `OUI|Oui|Yes|true`).
+- Test dans l'éditeur Apps Script : exécuter `testMachines()`.
+
+### Racks et casiers KO
+
+Source : la base Notion « Casiers et Racks KO CZ » (ID par défaut `27e37d20ee35806294f7f3bf21b1d545`, propriété `RACKS_DB_ID`).
+**Connectez l'intégration à cette base ET à la liste des machines** (nom des sites), et **créez dans la base une colonne de type Texte
+nommée « Commentaire technicien »** (autre nom : `RACKS_PROP_COMMENT`). Sans cette colonne, l'enregistrement est refusé avec un message clair.
+
+- **Écran 1 — sites** : un site par carte, avec le nombre de casiers/racks KO et « n/N diagnostiqués ».
+- **Écran 2 — un site** : deux onglets **Casiers** et **Racks** (et « Autres » s'il existe des éléments dont le nom ne commence ni par
+  « Casier » ni par « Rack »), avec le nombre de KO et de « à voir » ; tri numérique (9, 14-2, 110) ; case « Masquer ceux déjà diagnostiqués ».
+  On touche un élément : quatre gros boutons **Réparé · Non réparable · Laissé en l'état · À surveiller**, un commentaire facultatif,
+  **Enregistrer**. L'élément affiche aussitôt son diagnostic (signé, daté) ; l'historique est consultable.
+- **Ce qui est écrit dans Notion** : la colonne « État » **n'est jamais modifiée** (l'élément reste KO pour que l'équipe vérifie avant
+  remise en service). Le diagnostic va dans « Commentaire technicien », quatre lignes :
+  `État : …` / `Date : 29/10/2026 08:22` / `Tech : Prénom Nom` / `Commentaire : …`. Les diagnostics successifs s'empilent (le plus récent
+  en haut, séparés par `---`) ; `RACKS_COMMENT_MODE=replace` ne garde que le dernier.
+- Quels éléments : ceux dont « État » vaut **KO** (`RACKS_KO_STATES`, séparés par `|`) et reliés au site par la colonne « 🤖 Site »
+  (`RACKS_PROP_SITE`, `RACKS_PROP_STATE`, `RACKS_PROP_CAUSE` si vos colonnes portent d'autres noms).
+- **Hors ligne** : sites et listes sont gardés à l'ouverture ; un diagnostic saisi sans réseau est conservé, affiché « En attente d'envoi »
+  et envoyé au retour du réseau (un bandeau indique le nombre d'envois en attente). Un envoi refusé (ex. colonne absente) reste visible avec
+  **Réessayer** / **Supprimer**.
+- Test dans l'éditeur Apps Script : `testRacks()` (KO par site, présence de la colonne de commentaire).
 
 ### Utilisation sur le terrain
 
@@ -147,13 +197,13 @@ Source : la base Notion « MO Maintenance Physique » (ID par défaut `34937d20e
   *Aller à…*. Ces réglages sont propres à l'appareil et à la mission.
 - **Thème** : Auto / Clair / Sombre (*Réglages*). Auto suit le téléphone.
 
-### Données locales (IndexedDB, schéma v3)
+### Données locales (IndexedDB, schéma v5)
 
 Une fiche locale contient les saisies (`fields`, avec heure et auteur, marquées `dirty` tant que le serveur ne les a pas
 acquittées), les champs ajoutés, les demandes de suppression, le dernier état partagé du serveur, la demande de
 validation/réouverture en attente et le suivi des envois (essais, prochain essai : attente 30 s ×2, jusqu'à 15 min).
-Les photos sont dans une file séparée (`media_queue`, Blob). La migration depuis la v1 est automatique. Les fiches méthodes ont leurs propres
-stores (`methods_index`, `methods`, `method_media`). Rien n'est supprimé automatiquement de l'appareil.
+Les photos sont dans une file séparée (`media_queue`, Blob). La migration depuis la v1 est automatique. Les fiches méthodes et les machines ont leurs propres
+stores (`methods_index`, `methods`, `method_media` ; `machines_index`, `machines`, `machine_media`), de même que les racks (`racks_overview`, `racks_sites`) et la file d'envois en attente (`outbox`). Rien n'est supprimé automatiquement de l'appareil.
 
 > **Note de vérification** : le code Vue n'a pas pu être compilé dans l'environnement de développement (pas d'accès au
 > registre npm) ; il a été contrôlé par analyse de syntaxe, mais le premier `npm run build` (GitHub Actions) est le vrai test.

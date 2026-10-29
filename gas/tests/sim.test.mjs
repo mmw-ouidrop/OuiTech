@@ -123,7 +123,7 @@ test('1re synchro : squelette complet, état en JSON ASCII, rien d’autre dans 
   assert.equal(top.indexOf(w.stateToggle()), top.indexOf(c) + 1, 'données = frère juste après le rapport');
   assert.equal(top.some((b) => b.type === 'callout'), false);
   const l = lines(w);
-  assert.match(l[0], /^Dernière modification : Karim Benali · 2026-10-20 08:00$/);
+  assert.match(l[0], /^Dernière modification : Karim Benali · 20\/10\/2026 08:00$/);
   assert.deepEqual(l.slice(1), ['Matériel', "Prendre en photo l'installation", 'État du matériel : Usagé', 'Zone dégagée']);
   assert.equal(w.visibleReport()[4].to_do.checked, true);
   assert.ok(/^[\x20-\x7e]*$/.test(w.stateJson()), 'JSON ASCII uniquement');

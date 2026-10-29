@@ -25,7 +25,14 @@ Erreurs d'accès sur toute autre route : `UNAUTHORIZED` (absente / invalide), `S
 | `?action=method&id=<pageId>&sinceEdited=…` | Une fiche : propriétés, `links`, `support`, `media`, `hero`, `sections:[{title,kind,nodes}]` ou `{ unchanged:true }`. |
 | `?action=methodMedia&page=<pageId>&key=<clé>&mode=data\|url` | Image / fichier d'une fiche : `{name,mime,size,data(base64)}` (≤ 6 Mo), `{…,tooLarge:true,url}` ou, en `mode=url`, `{name,url}` (lien frais ≈ 1 h). |
 
-Détail des fiches méthodes (nœuds, sections, propriétés de script) : en-tête de `Methods.gs`.
+| `?action=machines&sinceRev=…` | Liste des machines : `{ rev, items:[{id,title,city,address,region,status,active,type,project,updated}] }` ou `{ unchanged:true, rev }`. |
+| `?action=machine&id=<pageId>&sinceEdited=…` | Une machine : adresse, `keybox`, `wifi{raw,ssid,password}`, connexions, options, pièces, notes, relations résolues, `photos`, `extras`, `nodes`. |
+| `?action=machineMedia&page=<pageId>&key=<clé>&mode=data\|url` | Photo du site (même forme que `methodMedia`). |
+
+| `?action=racksOverview&sinceRev=…` | Sites ayant des racks/casiers KO : `{ rev, total, sites:[{id,title,casiers,racks,autres,total,diagnosed}] }`. |
+| `?action=racks&site=<pageId>&sinceRev=…` | KO d'un site (`site=none` : sans site) : `{ rev, site, states, items:[{id,title,kind,cause,updated,diag,history}] }`. |
+
+Détail des fiches méthodes (nœuds, sections, propriétés de script) : en-tête de `Methods.gs` ; machines : en-tête de `Machines.gs`.
 
 ### getIntervention → `data`
 `id, reference, title, url, lastEdited, properties[], templateBlocks[], warnings[]`, plus :
@@ -53,6 +60,14 @@ removedCustom  ids supprimés (pour les retirer de l'écran)
 photos         { [componentId]: [ { mediaId, by, at } ] }
 editors[]      autres appareils actifs : { clientId, name, agoSec }
 ```
+
+## POST `methodComment` / `rackDiagnosis`
+
+`{ action:"methodComment", pageId, text, name, id }` ajoute un commentaire à la colonne « Commentaires » de la fiche (→ `{ comments }`).
+`{ action:"rackDiagnosis", pageId, state, comment, name, id }` (`state` : `repaired` | `unrepairable` | `left_as_is` | `watch`) écrit le
+diagnostic dans « Commentaire technicien » (→ `{ diag, history }`). `id` : identifiant unique de l'envoi ; un rejeu (même `id`) renvoie
+`{ duplicate:true }` sans rien écrire. Erreurs : `AUTHOR_REQUIRED`, `BAD_REQUEST`, `NOT_FOUND`, `COLUMN_MISSING` (colonne absente de la base).
+Les fiches méthodes renvoient aussi `gallery` (colonne « Medias » dans l'ordre de Notion), `comments`, `commentsEnabled` et `v` (version du format).
 
 ## POST `uploadMedia`
 `{ action, session, fileData (base64 ou data:URL), fileName, mimeType, mediaId, reference }`
@@ -109,6 +124,6 @@ photoErrors[], photosRemaining, cleanup`.
 
 ## Codes d'erreur
 `UNAUTHORIZED` · `BAD_REQUEST` · `NOT_FOUND` · `FORBIDDEN` · `AUTHOR_REQUIRED` · `UNSUPPORTED_TYPE` ·
-`MEDIA_NOT_FOUND` · `MEDIA_UNAVAILABLE` · `NOTION_FORBIDDEN` · `BUSY` (verrou occupé > 30 s) · `STATE_TOO_LARGE` · `STATE_DESYNC` ·
+`MEDIA_NOT_FOUND` · `MEDIA_UNAVAILABLE` · `COLUMN_MISSING` · `CONFIG_INVALID` · `NOTION_FORBIDDEN` · `BUSY` (verrou occupé > 30 s) · `STATE_TOO_LARGE` · `STATE_DESYNC` ·
 `NOTION_ERROR` · `NOTION_UNAVAILABLE` · `NOTION_UPLOAD_FAILED` · `CONFIG_MISSING` · `INTERNAL`.
 (`STATE_MISSING` / `STATE_CORRUPT` ne sortent pas : le rapport est alors reconstruit, avec un avertissement.)

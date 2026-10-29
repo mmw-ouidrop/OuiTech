@@ -5,6 +5,10 @@ import MissionView from './views/MissionView.vue'
 import LoginView from './views/LoginView.vue'
 import MethodsView from './views/MethodsView.vue'
 import MethodView from './views/MethodView.vue'
+import MachinesView from './views/MachinesView.vue'
+import MachineView from './views/MachineView.vue'
+import RacksView from './views/RacksView.vue'
+import RackSiteView from './views/RackSiteView.vue'
 import SettingsView from './views/SettingsView.vue'
 import ComingSoonView from './views/ComingSoonView.vue'
 import { normalizeReference, consumeUrlReference } from './lib/ref.js'
@@ -23,14 +27,10 @@ export const router = createRouter({
     { path: '/m/:reference', name: 'mission', component: MissionView, props: true, meta: { title: 'Fiche d’intervention', section: 'fiches' } },
     { path: '/methodes', name: 'methodes', component: MethodsView, meta: { title: 'Méthodes' } },
     { path: '/methodes/:id', name: 'methode', component: MethodView, props: true, meta: { title: 'Méthode', section: 'methodes' } },
-    {
-      path: '/machines', name: 'machines', component: ComingSoonView, meta: { title: 'Machines' },
-      props: { title: 'Liste des machines', text: 'Adresse, Wi-Fi, code de la boîte à clés et informations utiles de chaque machine.' }
-    },
-    {
-      path: '/racks', name: 'racks', component: ComingSoonView, meta: { title: 'Racks et casiers KO' },
-      props: { title: 'Racks et casiers KO', text: 'Les racks et casiers hors service du site choisi, avec le diagnostic du technicien.' }
-    },
+    { path: '/machines', name: 'machines', component: MachinesView, meta: { title: 'Machines' } },
+    { path: '/machines/:id', name: 'machine', component: MachineView, props: true, meta: { title: 'Machine', section: 'machines' } },
+    { path: '/racks', name: 'racks', component: RacksView, meta: { title: 'Racks et casiers KO' } },
+    { path: '/racks/:site', name: 'rack-site', component: RackSiteView, props: true, meta: { title: 'Racks et casiers KO', section: 'racks' } },
     {
       path: '/inventaires', name: 'inventaires', component: ComingSoonView, meta: { title: 'Inventaires' },
       props: { title: 'Inventaires de sites', text: 'Inventaire des pièces de maintenance stockées sur chaque site. À développer plus tard.' }

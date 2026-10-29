@@ -8,6 +8,7 @@ import BrandIcon from './components/BrandIcon.vue'
 import BrandWordmark from './components/BrandWordmark.vue'
 import { online } from './lib/online.js'
 import { configOk } from './config.js'
+import { startOutbox, pendingEntries } from './lib/outboxApp.js'
 import { loggedIn, sessionExpired, logout, validateSession, startBackgroundSync, engine } from './lib/session.js'
 
 const route = useRoute()
@@ -26,6 +27,8 @@ const title = computed(() => (route.name === 'mission' ? String(route.params.ref
 
 // Au lancement et au retour du réseau : envoie ce qui attend, vérifie que la session est toujours valable.
 startBackgroundSync()
+startOutbox()
+const waiting = computed(() => pendingEntries.value.filter((e) => e.status === 'pending').length)
 onMounted(validateSession)
 watch(online, (on) => on && validateSession())
 
@@ -65,6 +68,9 @@ watch(loggedIn, (now) => {
 
       <div v-if="!online" class="banner banner--offline" role="status">
         <strong>Hors ligne.</strong> Vos saisies sont enregistrées sur l'appareil.
+      </div>
+      <div v-if="waiting" class="banner" role="status">
+        <span><strong>{{ waiting }} envoi(s) en attente</strong> (commentaires, diagnostics) : ils partent dès que le réseau revient.</span>
       </div>
       <div v-if="sessionExpired" class="banner banner--warn" role="status">
         <span><strong>Session expirée.</strong> Reconnectez-vous dès que vous avez du réseau pour synchroniser.</span>

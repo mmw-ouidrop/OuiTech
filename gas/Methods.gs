@@ -61,6 +61,7 @@ function methodsCfg_() {
     medias: cfg_('METHODS_PROP_MEDIAS', 'Medias'),
     notes: cfg_('METHODS_PROP_NOTES', 'Notes'),
     errors: cfg_('METHODS_PROP_ERRORS', 'Erreurs Associées'),
+    comments: cfg_('METHODS_PROP_COMMENTS', 'Commentaires'),
     hiddenStatus: nameList_('METHODS_HIDDEN_STATUS', ['Pas commencé']),
     hiddenTitles: nameList_('METHODS_HIDDEN_TITLES', [])
   };
@@ -351,15 +352,23 @@ function getMethod_(p) {
   const nodes = convertMethodBlocks_(blocks);
   const sections = splitSections_(nodes);
 
+  // Colonne « Medias » : l'ordre de Notion est conservé tel quel (carrousel). Une adresse externe (YouTube, Vimeo, Loom…)
+  // devient une vidéo intégrée ; un fichier se reconnaît à son extension.
   const media = [];
   filesOfProp_(propOf_(page, c.medias)).forEach(function (f, i) {
-    const url = fileInfo_(f).url;
-    const isVideo = /\.(mp4|mov|webm|m4v)(\?|$)/i.test(url) || /\.(mp4|mov|webm|m4v)$/i.test(f.name || '');
-    media.push({ key: 'p:' + c.medias + ':' + i, kind: isVideo ? 'video' : 'image', name: f.name || '', caption: '' });
+    const info = fileInfo_(f);
+    const key = 'p:' + c.medias + ':' + i;
+    const isVideoFile = /\.(mp4|mov|webm|m4v)(\?|$)/i.test(info.url) || /\.(mp4|mov|webm|m4v)$/i.test(f.name || '');
+    if (info.external && /^https?:\/\//.test(info.url) && !/\.(jpe?g|png|gif|webp|avif|heic)(\?|$)/i.test(info.url) && !isVideoFile) {
+      media.push({ key: key, kind: 'video', url: info.url, name: f.name || '', caption: '' });     // page vidéo hébergée ailleurs
+    } else {
+      media.push({ key: key, kind: isVideoFile ? 'video' : 'image', name: f.name || '', caption: '' });
+    }
   });
   const bodyMedia = [];
   collectMedia_(nodes, bodyMedia);
   const hero = media[0] || bodyMedia[0] || null;
+  const comments = readComments_(page, c);
 
   const links = [];
   const doc = urlOfProp_(propOf_(page, c.doc));
@@ -375,6 +384,7 @@ function getMethod_(p) {
   if (budget.truncated) warnings.push({ code: 'TRUNCATED', message: 'Fiche très longue : la fin n’est pas affichée, voir le document détaillé' });
 
   return {
+    v: 2,                                            // version du format : la PWA relit les fiches enregistrées avant
     id: pageId,
     title: titleOfPage_(page),
     groups: choiceNames_(propOf_(page, c.group)),
@@ -385,7 +395,10 @@ function getMethod_(p) {
     links: links,
     support: support,
     media: media.concat(bodyMedia),
+    gallery: media,                                  // colonne « Medias », dans l'ordre de Notion (carrousel)
     hero: hero ? { key: hero.key, kind: hero.kind } : null,
+    commentsEnabled: comments.enabled,
+    comments: comments.items,
     sections: sections,
     warnings: warnings
   };
@@ -412,12 +425,11 @@ function blockBelongsToPage_(block, pageId) {
   return false;
 }
 
-function mediaSource_(page, key, c) {
+function mediaSource_(page, key, allowedProps) {
   // → { url, name, mime }
   const m = String(key || '').match(/^p:(.+):(\d{1,3})$/);
   if (m) {
-    const allowed = [c.medias, c.support];
-    if (allowed.indexOf(m[1]) === -1) throw new ApiError_('BAD_REQUEST', 'Clé de média invalide');
+    if (allowedProps.indexOf(m[1]) === -1) throw new ApiError_('BAD_REQUEST', 'Clé de média invalide');
     const files = filesOfProp_(propOf_(page, m[1]));
     const f = files[Number(m[2])];
     if (!f) throw new ApiError_('NOT_FOUND', 'Média introuvable');
@@ -439,10 +451,13 @@ function getMethodMedia_(p) {
   const pageId = methodPageId_(p.page);
   const page = notion_('GET', '/pages/' + pageId);
   assertMethodPage_(page, c);
-  const src = mediaSource_(page, p.key, c);
-  if (!src.url || !/^https:\/\//.test(src.url)) throw new ApiError_('NOT_FOUND', 'Média introuvable');
+  return deliverMedia_(mediaSource_(page, p.key, [c.medias, c.support]), p.mode);
+}
 
-  if (p.mode === 'url') return { name: src.name, url: src.url };
+// Télécharge le fichier (adresse fraîche fournie par Notion) et le renvoie en base64, ou renvoie seulement le lien.
+function deliverMedia_(src, mode) {
+  if (!src.url || !/^https:\/\//.test(src.url)) throw new ApiError_('NOT_FOUND', 'Média introuvable');
+  if (mode === 'url') return { name: src.name, url: src.url };
 
   const res = UrlFetchApp.fetch(src.url, { muteHttpExceptions: true, followRedirects: true });
   if (res.getResponseCode() !== 200) {
@@ -455,6 +470,95 @@ function getMethodMedia_(p) {
     return { name: src.name, mime: mime, size: bytes.length, tooLarge: true, url: src.url };
   }
   return { name: src.name, mime: mime, size: bytes.length, data: Utilities.base64Encode(bytes) };
+}
+
+/* ───────────────────────────── Commentaires ─────────────────────────────── */
+
+// Colonne texte « Commentaires » de la fiche : un commentaire par paragraphe, du plus ancien au plus récent.
+//     Prénom Nom · 29/10/2026 08:22
+//     texte (une ou plusieurs lignes)
+const COMMENT_SEP = '\n\n';
+const COMMENT_MAX_CHARS = 1000;          // par commentaire
+const COMMENT_PROP_MAX_CHARS = 12000;    // au-delà, les plus anciens sont retirés
+
+function stamp_() {
+  return Utilities.formatDate(new Date(Date.now()), TZ, 'dd/MM/yyyy HH:mm');
+}
+
+function cleanName_(s) {
+  return String(s || '').replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
+}
+
+function parseComments_(text) {
+  return String(text || '').split(/\n{2,}/).map(function (block) {
+    const lines = block.replace(/\r/g, '').split('\n');
+    const m = lines[0].match(/^(.*?) · (\d{2}\/\d{2}\/\d{4} \d{2}:\d{2})$/);
+    if (!m) return block.trim() ? { by: '', at: '', text: block.trim() } : null;   // texte ajouté à la main dans Notion
+    return { by: m[1], at: m[2], text: lines.slice(1).join('\n').trim() };
+  }).filter(Boolean);
+}
+
+function readComments_(page, c) {
+  const prop = propOf_(page, c.comments);
+  if (!prop || prop.type !== 'rich_text') return { enabled: false, items: [] };
+  return { enabled: true, items: parseComments_(plain_(prop.rich_text)) };
+}
+
+// Découpe un texte en éléments rich_text de 2000 caractères au plus (limite de l'API Notion).
+function richChunks_(text) {
+  const out = [];
+  for (let i = 0; i < text.length; i += 1900) out.push({ type: 'text', text: { content: text.slice(i, i + 1900) } });
+  return out;
+}
+
+// Ajoute `block` à la fin d'une colonne texte (ou au début : `atStart`), sous verrou, sans jamais perdre le contenu existant.
+// Retire les plus anciens blocs si la colonne dépasse COMMENT_PROP_MAX_CHARS. `dedupeId` : rejeu sans effet pendant 6 h.
+function appendToTextProp_(pageId, propName, block, opts) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const cache = CacheService.getScriptCache();
+    const dedupeKey = opts.dedupeId ? 'w:' + opts.dedupeId : '';
+    if (dedupeKey && cache.get(dedupeKey)) return { duplicate: true };
+    const page = notion_('GET', '/pages/' + pageId);
+    opts.check(page);
+    const prop = propOf_(page, propName);
+    if (!prop || prop.type !== 'rich_text') {
+      throw new ApiError_('COLUMN_MISSING', 'La colonne « ' + propName + ' » (type Texte) n’existe pas dans la base Notion : créez-la, puis réessayez.');
+    }
+    const sep = opts.separator;
+    let blocks = plain_(prop.rich_text).split(sep).filter(function (b) { return b.trim(); });
+    if (opts.replace) blocks = [];
+    if (opts.atStart) blocks.unshift(block); else blocks.push(block);
+    let text = blocks.join(sep);
+    while (text.length > COMMENT_PROP_MAX_CHARS && blocks.length > 1) {
+      if (opts.atStart) blocks.pop(); else blocks.shift();
+      text = blocks.join(sep);
+    }
+    const props = {};
+    props[propName] = { rich_text: richChunks_(text) };
+    notion_('PATCH', '/pages/' + pageId, { properties: props });
+    if (dedupeKey) cache.put(dedupeKey, '1', SYNC_CACHE_SECONDS);
+    return { duplicate: false, text: text, page: page };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function postMethodComment_(body) {
+  const c = methodsCfg_();
+  const pageId = methodPageId_(body.pageId);
+  const by = cleanName_(body.name);
+  if (!by) throw new ApiError_('AUTHOR_REQUIRED', 'Indiquez votre nom (Réglages) avant de commenter.');
+  const text = String(body.text || '').replace(/\r/g, '').replace(/\n{2,}/g, '\n').trim();
+  if (!text) throw new ApiError_('BAD_REQUEST', 'Le commentaire est vide.');
+  if (text.length > COMMENT_MAX_CHARS) throw new ApiError_('BAD_REQUEST', 'Commentaire trop long (' + COMMENT_MAX_CHARS + ' caractères au plus).');
+  const dedupeId = String(body.id || '').slice(0, 64);
+  const r = appendToTextProp_(pageId, c.comments, by + ' · ' + stamp_() + '\n' + text, {
+    separator: COMMENT_SEP, dedupeId: dedupeId, check: function (page) { assertMethodPage_(page, c); }
+  });
+  if (r.duplicate) return { duplicate: true };
+  return { duplicate: false, comments: parseComments_(r.text) };
 }
 
 /* ─────────────────────────── Test dans l'éditeur ────────────────────────── */

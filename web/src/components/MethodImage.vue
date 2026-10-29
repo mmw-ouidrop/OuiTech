@@ -8,7 +8,8 @@ const props = defineProps({
   pageId: { type: String, required: true },
   mediaKey: { type: String, required: true },
   caption: { type: String, default: '' },
-  hero: { type: Boolean, default: false }
+  hero: { type: Boolean, default: false },
+  service: { type: Object, default: null }      // catalogue d'origine (méthodes par défaut ; machines pour les photos de site)
 })
 
 const src = ref('')
@@ -24,7 +25,7 @@ function release() {
 
 async function load() {
   status.value = 'loading'
-  const r = await methods.getMedia(props.pageId, props.mediaKey)
+  const r = await (props.service || methods).getMedia(props.pageId, props.mediaKey)
   if (r.blob) {
     release()
     objectUrl = URL.createObjectURL(r.blob)

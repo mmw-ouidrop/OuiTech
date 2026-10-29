@@ -9,6 +9,11 @@ import MethodImage from '../components/MethodImage.vue'
 import MethodVideo from '../components/MethodVideo.vue'
 import MethodFile from '../components/MethodFile.vue'
 import MethodNodes from '../components/MethodNodes.vue'
+import MediaCarousel from '../components/MediaCarousel.vue'
+import MethodComments from '../components/MethodComments.vue'
+import LinkIcon from '../components/LinkIcon.vue'
+import { getMethod } from '../db.js'
+import { doneTick } from '../lib/outboxApp.js'
 
 const props = defineProps({ id: { type: String, required: true } })
 
@@ -21,7 +26,17 @@ const prefetch = ref({ running: false, done: 0, total: 0, tooLarge: 0, failed: 0
 const KIND_LABEL = { materials: 'Matériel', tools: 'Outils', steps: 'Étapes', before: 'Avant de commencer', summary: 'Résumé', photos: 'Photos' }
 const sections = computed(() => (method.value ? method.value.sections.filter((s) => s.nodes.length || s.title) : []))
 const withTitles = computed(() => sections.value.filter((s) => s.title))
-const skipKey = computed(() => (method.value && method.value.hero && !method.value.hero.key.startsWith('p:') ? method.value.hero.key : ''))
+// Colonne « Medias » dans l'ordre de Notion (fiches enregistrées avant l'ajout de `gallery` : reconstituée).
+const gallery = computed(() => {
+  const m = method.value
+  if (!m) return []
+  if (Array.isArray(m.gallery)) return m.gallery
+  return (m.media || []).filter((x) => x.key.startsWith('p:'))
+})
+const docLink = computed(() => (method.value ? method.value.links.find((l) => l.kind === 'doc') : null))
+const folderLink = computed(() => (method.value ? method.value.links.find((l) => l.kind === 'folder') : null))
+// Sans colonne « Medias », la première image ou vidéo du corps sert de bandeau (et n'est pas répétée plus bas).
+const skipKey = computed(() => (!gallery.value.length && method.value && method.value.hero && !method.value.hero.key.startsWith('p:') ? method.value.hero.key : ''))
 const hasBody = computed(() => sections.value.some((s) => s.nodes.length))
 const modeOf = (s) => (s.kind === 'materials' || s.kind === 'tools' ? 'checklist' : s.kind === 'steps' ? 'steps' : 'default')
 
@@ -65,6 +80,12 @@ function jump(i) {
 }
 const secIndex = (s) => sections.value.indexOf(s)
 
+// Un commentaire vient d'être envoyé : on relit la copie locale de la fiche.
+watch(doneTick, async () => {
+  const fresh = await getMethod(props.id)
+  if (fresh && method.value) method.value = { ...method.value, comments: fresh.comments, commentsEnabled: fresh.commentsEnabled }
+})
+
 onMounted(load)
 watch(() => props.id, load)
 watch(online, (on) => { if (on) load() })
@@ -77,7 +98,13 @@ watch(online, (on) => { if (on) load() })
   <p v-if="error" class="alert" role="alert">{{ error }}</p>
 
   <article v-if="method">
-    <h2 class="title">{{ method.title }}</h2>
+    <div class="head">
+      <h2 class="title">{{ method.title }}</h2>
+      <div v-if="docLink || folderLink" class="head__icons">
+        <LinkIcon v-if="docLink" name="file" :href="docLink.url" label="Ouvrir la méthode dans Google Docs" />
+        <LinkIcon v-if="folderLink" name="folder" :href="folderLink.url" label="Ouvrir le dossier de la méthode" />
+      </div>
+    </div>
     <p class="chips">
       <span v-for="g in method.groups" :key="g" class="chip chip--info">{{ g }}</span>
       <span v-if="method.status" class="chip" :class="'chip--' + statusTone(method.status)">{{ method.status }}</span>
@@ -86,8 +113,9 @@ watch(online, (on) => { if (on) load() })
     <p v-if="notice" class="note small" role="status">{{ notice }}</p>
     <p v-if="method.status === 'A mettre à jour' || method.status === 'En cours'" class="note small">Cette fiche est encore en cours de rédaction : vérifiez avec le support en cas de doute.</p>
 
-    <!-- Bandeau : photo / vidéo principale -->
-    <template v-if="method.hero">
+    <!-- Bandeau : colonne « Medias » en carrousel (ordre de Notion), sinon première image/vidéo du corps -->
+    <MediaCarousel v-if="gallery.length" :page-id="method.id" :items="gallery" />
+    <template v-else-if="method.hero">
       <MethodVideo v-if="method.hero.kind === 'video'" :page-id="method.id" :media-key="method.hero.key" />
       <MethodImage v-else :page-id="method.id" :media-key="method.hero.key" hero />
     </template>
@@ -99,11 +127,9 @@ watch(online, (on) => { if (on) load() })
     <p v-if="method.errors" class="small"><strong>Erreurs associées :</strong> {{ method.errors }}</p>
 
     <!-- Documents -->
-    <section v-if="method.links.length || method.support.length" class="docs" aria-label="Documents">
-      <a v-for="l in method.links" :key="l.url" class="btn btn--ghost" :href="l.url" target="_blank" rel="noopener noreferrer">{{ l.label }}</a>
+    <section v-if="method.support.length" class="docs" aria-label="Documents">
       <MethodFile v-for="s in method.support" :key="s.key" :page-id="method.id" :media-key="s.key" :name="'Support : ' + s.name" />
     </section>
-    <p v-if="method.links.length && !online" class="small muted">Les documents en ligne demandent du réseau.</p>
 
     <!-- Sommaire -->
     <nav v-if="withTitles.length > 2" class="toc" aria-label="Sommaire">
@@ -120,6 +146,8 @@ watch(online, (on) => { if (on) load() })
       <MethodNodes :nodes="s.nodes" :page-id="method.id" :mode="modeOf(s)" :skip-key="skipKey" />
     </section>
 
+    <MethodComments :page-id="method.id" :comments="method.comments || []" :enabled="!!method.commentsEnabled" />
+
     <p v-for="w in method.warnings" :key="w.code" class="note small">{{ w.message }}</p>
 
     <p v-if="prefetch.running" class="small muted" role="status">Mise en mémoire pour le hors-ligne…</p>
@@ -130,7 +158,9 @@ watch(online, (on) => { if (on) load() })
 
 <style scoped>
 .back { display: inline-flex; align-items: center; min-height: var(--tap); color: var(--accent); text-decoration: none; }
-.title { margin: var(--s-2) 0; overflow-wrap: anywhere; }
+.head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s-3); }
+.head__icons { display: flex; gap: var(--s-2); flex: none; padding-top: var(--s-2); }
+.title { margin: var(--s-2) 0; overflow-wrap: anywhere; min-width: 0; }
 .chips { display: flex; flex-wrap: wrap; gap: var(--s-2); margin: var(--s-2) 0; }
 .notes { margin: var(--s-3) 0; }
 .notes__label { margin: 0 0 var(--s-1); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }

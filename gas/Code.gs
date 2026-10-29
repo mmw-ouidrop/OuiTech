@@ -43,6 +43,8 @@
  *                    des requêtes/réponses est décrit en tête de ce fichier
  *    Auth.gs         connexion par mot de passe (2 niveaux), sessions signées
  *    Methods.gs      fiches méthodes (lecture seule) : liste, fiche, médias
+ *    Machines.gs     liste des machines (lecture seule) : liste, fiche, photos
+ *    Racks.gs        racks et casiers KO : vue d'ensemble, liste par site, diagnostic du technicien
  *    appsscript.json manifeste
  *
  *  ROUTES
@@ -54,6 +56,9 @@
  *    GET  ?action=getReport&pageId=…&sinceRev=N&clientId=…&name=…&session=…
  *           → { unchanged:true } ou l'état du rapport (relève des collègues)
  *    GET  ?action=methods | method | methodMedia   → fiches méthodes (voir Methods.gs)
+ *    GET  ?action=machines | machine | machineMedia → liste des machines (voir Machines.gs)
+ *    GET  ?action=racksOverview | racks&site=<pageId>  → racks et casiers KO (voir Racks.gs)
+ *    POST { action:"methodComment" | "rackDiagnosis", … } → commentaire de méthode / diagnostic (voir Methods.gs, Racks.gs)
  *    POST { action:"uploadMedia", session, fileData, fileName, mimeType,
  *           mediaId?, reference? }                 → { fileId, ... }
  *    POST { action:"syncReport", … }               → voir Report.gs
@@ -172,6 +177,16 @@ function doGet(e) {
         return ok_(getMethod_(p));
       case 'methodMedia':
         return ok_(getMethodMedia_(p));
+      case 'machines':
+        return ok_(getMachines_(p));
+      case 'machine':
+        return ok_(getMachine_(p));
+      case 'machineMedia':
+        return ok_(getMachineMedia_(p));
+      case 'racksOverview':
+        return ok_(getRacksOverview_(p));
+      case 'racks':
+        return ok_(getRacks_(p));
       default:
         throw new ApiError_('UNKNOWN_ACTION', 'Action GET inconnue : ' + p.action);
     }
@@ -190,6 +205,10 @@ function doPost(e) {
         return ok_(uploadMedia_(body));
       case 'syncReport':
         return ok_(syncReport_(body));
+      case 'methodComment':
+        return ok_(postMethodComment_(body));
+      case 'rackDiagnosis':
+        return ok_(postRackDiagnosis_(body));
       default:
         throw new ApiError_('UNKNOWN_ACTION', 'Action POST inconnue : ' + body.action);
     }

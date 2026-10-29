@@ -11,6 +11,8 @@ export const ROOT = 'ROOT_FOLDER_ID_0000000000000000';
 export const PAGE = 'aaaaaaaabbbbccccddddeeeeeeeeeeee';
 export const DB = '11111111222233334444555555555555';
 export const MDB = '34937d20ee35803c8909cf0fd8cda157';
+export const RDB = '27e37d20ee35806294f7f3bf21b1d545';
+export const MCDB = '26b37d20ee3580f3b76dc45d5073b74c';
 export const TOKEN = 'tok_test';
 export const PW_TECH = 'tech-pass-12345';
 export const PW_SUPPORT = 'support-pass-67890';
@@ -108,6 +110,34 @@ export function makeWorld() {
     blocks.forEach((spec) => { const b = create(id, spec); w.kids[id].push(b.id); });
     return { id, nid, page };
   };
+  // Machines : propriétés données telles quelles (types Notion), pages liées (région, client) dans une autre base.
+  w.machinePages = [];
+  w.addMachine = ({ props = {}, edited = '2026-10-19T08:00:00Z', blocks = [], archived = false, parentDb }) => {
+    const id = w.id();
+    w.blocks[id] = { id, type: 'page' };
+    w.kids[id] = [];
+    const page = { id, archived, last_edited_time: edited, parent: { type: 'database_id', database_id: dash(parentDb || MCDB) }, properties: props };
+    w.machinePages.push(page);
+    blocks.forEach((spec) => { const b = create(id, spec); w.kids[id].push(b.id); });
+    return { id, nid: norm(id), page };
+  };
+  // Racks / casiers : pages de la base RDB (État = select), filtrables par site (relation) et par état.
+  w.addRack = ({ title, state = 'KO', site, cause = [], comment = '', edited = '2026-10-19T08:00:00Z', stateType = 'select' }) => {
+    const props = {
+      Name: { type: 'title', title: [{ plain_text: title }] },
+      'État': stateType === 'select' ? { type: 'select', select: { name: state } } : { type: 'status', status: { name: state } },
+      '🤖 Site': { type: 'relation', relation: site ? [].concat(site).map((id) => ({ id })) : [] },
+      Cause: { type: 'multi_select', multi_select: cause.map((name) => ({ name })) }
+    };
+    if (comment !== null) props['Commentaire technicien'] = { type: 'rich_text', rich_text: comment ? [{ type: 'text', text: { content: comment }, plain_text: comment }] : [] };
+    return w.addMachine({ props, edited, parentDb: RDB });
+  };
+  w.addRelated = (title) => {
+    const id = w.id();
+    w.blocks[id] = { id, type: 'page' }; w.kids[id] = [];
+    w.machinePages.push({ id, archived: false, last_edited_time: '2026-01-01T00:00:00Z', parent: { type: 'database_id', database_id: dash('99999999999999999999999999999999') }, properties: { Nom: { type: 'title', title: [{ plain_text: title }] } } });
+    return id;
+  };
   w.addFile = (url, bytes, mime = 'image/png') => { w.files[url] = { bytes: [...bytes], mime }; };
 
   const rtS = (t) => [{ type: 'text', text: { content: t } }];
@@ -178,9 +208,55 @@ export function makeWorld() {
         const more = start + size < live.length;
         return res(200, { results: live.slice(start, start + size), has_more: more, next_cursor: more ? String(start + size) : null });
       }
+      if (method === 'GET' && p0 === `/databases/${RDB}`) {
+        const sample = w.machinePages.find((p) => norm(p.parent.database_id) === RDB);
+        const props = {};
+        Object.entries((sample && sample.properties) || { 'État': { type: 'select' } }).forEach(([k, v]) => { props[k] = { type: v.type }; });
+        return res(200, { properties: props });
+      }
+      if (method === 'POST' && p0 === `/databases/${RDB}/query`) {
+        const match = (page, f) => {
+          if (f.and) return f.and.every((x) => match(page, x));
+          if (f.or) return f.or.some((x) => match(page, x));
+          const prop = page.properties[f.property];
+          if (!prop) return false;
+          if (f.select) { assert.equal(prop.type, 'select', 'filtre select sur une colonne ' + prop.type); return !!prop.select && prop.select.name === f.select.equals; }
+          if (f.status) { assert.equal(prop.type, 'status', 'filtre status sur une colonne ' + prop.type); return !!prop.status && prop.status.name === f.status.equals; }
+          if (f.relation) {
+            const ids = prop.relation.map((r) => norm(r.id));
+            if (f.relation.contains) return ids.includes(norm(f.relation.contains));
+            if (f.relation.is_empty) return ids.length === 0;
+          }
+          throw new Error('filtre non géré par le simulateur : ' + JSON.stringify(f));
+        };
+        const live = w.machinePages.filter((p) => !p.archived && norm(p.parent.database_id) === RDB && match(p, body.filter));
+        const start = Number((body && body.start_cursor) || 0);
+        const more = start + 100 < live.length;
+        return res(200, { results: live.slice(start, start + 100), has_more: more, next_cursor: more ? String(start + 100) : null });
+      }
       m = p0.match(/^\/pages\/([^/]+)$/);
-      if (m && method === 'GET' && w.methodPages.some((p) => norm(p.id) === norm(m[1]))) {
-        return res(200, w.methodPages.find((p) => norm(p.id) === norm(m[1])));
+      if (m && method === 'PATCH') {
+        const page = [...w.methodPages, ...w.machinePages].find((p) => norm(p.id) === norm(m[1]));
+        if (!page) return err(404, 'Could not find page');
+        Object.entries(body.properties || {}).forEach(([k, v]) => {
+          if (!page.properties[k]) return;
+          if (v.rich_text) {
+            v.rich_text.forEach((t) => assert.ok(t.text.content.length <= 2000, 'rich_text : 2000 caractères maximum'));
+            page.properties[k] = { type: 'rich_text', rich_text: v.rich_text.map((t) => ({ ...t, plain_text: t.text.content })) };
+          }
+        });
+        page.last_edited_time = new Date(w.now).toISOString();
+        return res(200, page);
+      }
+      if (method === 'POST' && p0 === `/databases/${MCDB}/query`) {
+        const live = w.machinePages.filter((p) => !p.archived && norm(p.parent.database_id) === MCDB);
+        const start = Number((body && body.start_cursor) || 0);
+        const more = start + 100 < live.length;
+        return res(200, { results: live.slice(start, start + 100), has_more: more, next_cursor: more ? String(start + 100) : null });
+      }
+      m = p0.match(/^\/pages\/([^/]+)$/);
+      if (m && method === 'GET' && [...w.methodPages, ...w.machinePages].some((p) => norm(p.id) === norm(m[1]))) {
+        return res(200, [...w.methodPages, ...w.machinePages].find((p) => norm(p.id) === norm(m[1])));
       }
       if (method === 'GET' && p0 === `/pages/${PAGE}`) {
         return res(200, { parent: { database_id: w.pageDb || dash(DB) }, archived: false });
@@ -317,7 +393,10 @@ export function makeWorld() {
       base64DecodeWebSafe: (s) => { assert.equal(s.length % 4, 0, 'base64DecodeWebSafe : bourrage attendu'); return [...Buffer.from(s.replace(/-/g, '+').replace(/_/g, '/'), 'base64')].map((b) => (b > 127 ? b - 256 : b)); },
       base64Encode: (x) => Buffer.from(x.map((b) => (b < 0 ? b + 256 : b))).toString('base64'),
       base64Decode: (s) => { if (/[^A-Za-z0-9+/=]/.test(s)) throw new Error('bad b64'); return [...Buffer.from(s, 'base64')]; },
-      formatDate: (d) => new Date(d).toISOString().slice(0, 16).replace('T', ' ')
+      formatDate: (d, tz, pattern = 'yyyy-MM-dd HH:mm') => {
+        const [y, mo, da, h, mi] = new Date(d).toISOString().slice(0, 16).split(/[-T:]/)
+        return pattern.replace('yyyy', y).replace('MM', mo).replace('dd', da).replace('HH', h).replace('mm', mi)
+      }
     },
     DriveApp: {
       getFolderById: (id) => { if (!w.folders[id]) throw new Error('not found'); return w.folders[id]; },

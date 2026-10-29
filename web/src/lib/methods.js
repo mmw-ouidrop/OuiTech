@@ -113,23 +113,25 @@ export function base64ToBlob(b64, mime) {
 
 /* ───────────────────────────────── Service ───────────────────────────────── */
 
-// store : { getMethodsList, saveMethodsList, touchMethodsList, getMethod, saveMethod, touchMethod,
-//           getMethodMedia, saveMethodMedia, listMethodMediaKeys }   api : { methods, method, methodMedia }
-export function createMethodsService({ store, api, isOnline = () => true }) {
+// Service générique d'un catalogue en lecture seule (méthodes, machines) : « copie locale d'abord, réseau si utile ».
+//   store : { getList, saveList, touchList, getItem, saveItem, touchItem, getMedia, saveMedia, listMediaKeys }
+//   api   : { list({sinceRev}), item({id, sinceEdited}), media({page, key, mode}) }
+//   mediaKeysOf(item) : clés de médias à garder hors ligne
+export function createCatalogService({ store, api, isOnline = () => true, mediaKeysOf, minVersion = 0 }) {
   const isNetwork = (e) => e && (e.code === 'NETWORK' || e.code === 'TIMEOUT' || e.code === 'BAD_RESPONSE')
 
   // Liste : la copie locale sert tout de suite ; le réseau la rafraîchit s'il y a mieux.
   // → { items, fetchedAt, fromCache, error }   (error : pourquoi la copie n'a pas été rafraîchie)
   async function loadList() {
-    const cached = await store.getMethodsList()
+    const cached = await store.getList()
     if (!isOnline()) return { items: cached ? cached.items : [], fetchedAt: cached && cached.fetchedAt, fromCache: true, error: cached ? null : 'OFFLINE_EMPTY' }
     try {
-      const res = await api.methods({ sinceRev: cached && cached.rev })
+      const res = await api.list({ sinceRev: cached && cached.rev })
       if (res.unchanged && cached) {
-        await store.touchMethodsList()
+        await store.touchList()
         return { items: cached.items, fetchedAt: Date.now(), fromCache: false, error: null }
       }
-      await store.saveMethodsList(res)
+      await store.saveList(res)
       return { items: res.items, fetchedAt: Date.now(), fromCache: false, error: null }
     } catch (e) {
       if (cached && (isNetwork(e) || e.code === 'NOTION_FORBIDDEN')) return { items: cached.items, fetchedAt: cached.fetchedAt, fromCache: true, error: e.code }
@@ -138,23 +140,25 @@ export function createMethodsService({ store, api, isOnline = () => true }) {
   }
 
   // Fiche : copie locale d'abord ; en ligne, on vérifie la date de modification (sans relire le corps si rien n'a changé).
-  // → { method, fromCache, error }
-  async function loadMethod(id) {
-    const cached = await store.getMethod(id)
+  // → { item, fromCache, error }
+  async function loadItem(id) {
+    const cached = await store.getItem(id)
     if (!isOnline()) {
-      if (!cached) return { method: null, fromCache: true, error: 'OFFLINE_EMPTY' }
-      return { method: cached, fromCache: true, error: null }
+      if (!cached) return { item: null, fromCache: true, error: 'OFFLINE_EMPTY' }
+      return { item: cached, fromCache: true, error: null }
     }
     try {
-      const res = await api.method({ id, sinceEdited: cached && cached.updated })
-      if (res.unchanged && cached) {
-        await store.touchMethod(id)
-        return { method: cached, fromCache: false, error: null }
+      // Une fiche enregistrée dans un ancien format (`v` plus petit) est relue en entier même si Notion n'a pas bougé.
+      const usable = cached && (cached.v || 0) >= minVersion
+      const res = await api.item({ id, sinceEdited: usable ? cached.updated : '' })
+      if (res.unchanged && usable) {
+        await store.touchItem(id)
+        return { item: cached, fromCache: false, error: null }
       }
-      await store.saveMethod(res)
-      return { method: res, fromCache: false, error: null }
+      await store.saveItem(res)
+      return { item: res, fromCache: false, error: null }
     } catch (e) {
-      if (cached && isNetwork(e)) return { method: cached, fromCache: true, error: e.code }
+      if (cached && isNetwork(e)) return { item: cached, fromCache: true, error: e.code }
       throw e
     }
   }
@@ -162,14 +166,14 @@ export function createMethodsService({ store, api, isOnline = () => true }) {
   // Média : le fichier gardé sur l'appareil d'abord ; sinon téléchargé (via le serveur : les liens Notion expirent).
   // → { blob, name } | { url, name, tooLarge:true } | { error }
   async function getMedia(pageId, key) {
-    const hit = await store.getMethodMedia(pageId, key)
+    const hit = await store.getMedia(pageId, key)
     if (hit) return { blob: hit.blob, name: hit.name, mime: hit.mime }
     if (!isOnline()) return { error: 'OFFLINE' }
     try {
-      const res = await api.methodMedia({ page: pageId, key })
+      const res = await api.media({ page: pageId, key })
       if (res.tooLarge) return { tooLarge: true, url: res.url, name: res.name, size: res.size }
       const blob = base64ToBlob(res.data, res.mime)
-      await store.saveMethodMedia(pageId, key, { blob, mime: res.mime, name: res.name })
+      await store.saveMedia(pageId, key, { blob, mime: res.mime, name: res.name })
       return { blob, name: res.name, mime: res.mime }
     } catch (e) {
       return { error: e.code || 'ERROR', message: e.message }
@@ -180,23 +184,22 @@ export function createMethodsService({ store, api, isOnline = () => true }) {
   async function getFreshUrl(pageId, key) {
     if (!isOnline()) return { error: 'OFFLINE' }
     try {
-      const res = await api.methodMedia({ page: pageId, key, mode: 'url' })
+      const res = await api.media({ page: pageId, key, mode: 'url' })
       return { url: res.url, name: res.name }
     } catch (e) {
       return { error: e.code || 'ERROR', message: e.message }
     }
   }
 
-  // Garde les images (et le support PDF léger) d'une fiche sur l'appareil. → { done, failed, skipped }
-  async function prefetch(method, { onProgress, includeSupport = true } = {}) {
-    const keys = imageKeys(method).slice(0, MAX_PREFETCH_IMAGES)
-    if (includeSupport) for (const s of method.support || []) keys.push(s.key)
-    const have = await store.listMethodMediaKeys(method.id)
+  // Garde les médias d'une fiche sur l'appareil. → { done, failed, tooLarge, skipped }
+  async function prefetch(item, { onProgress } = {}) {
+    const keys = mediaKeysOf(item).slice(0, MAX_PREFETCH_IMAGES + 10)
+    const have = await store.listMediaKeys(item.id)
     const todo = keys.filter((k) => !have.has(k))
     const result = { done: 0, failed: 0, tooLarge: 0, skipped: keys.length - todo.length }
     for (const k of todo) {
       if (!isOnline()) { result.failed += todo.length - result.done - result.failed - result.tooLarge; break }
-      const r = await getMedia(method.id, k)
+      const r = await getMedia(item.id, k)
       if (r.blob) result.done++
       else if (r.tooLarge) result.tooLarge++
       else result.failed++
@@ -205,19 +208,19 @@ export function createMethodsService({ store, api, isOnline = () => true }) {
     return result
   }
 
-  // Télécharge toutes les fiches publiées (corps + images) pour travailler sans réseau.
+  // Télécharge toutes les fiches publiées (corps + médias) pour travailler sans réseau.
   async function prefetchAll(items, { onProgress, signal } = {}) {
     const total = items.length
     let n = 0
-    const out = { methods: 0, failed: 0, images: 0, tooLarge: 0 }
+    const out = { items: 0, failed: 0, images: 0, tooLarge: 0 }
     for (const it of items) {
       if (signal && signal.aborted) break
       if (!isOnline()) break
       try {
-        const { method } = await loadMethod(it.id)
-        if (method) {
-          const r = await prefetch(method)
-          out.methods++; out.images += r.done; out.tooLarge += r.tooLarge; out.failed += r.failed
+        const { item } = await loadItem(it.id)
+        if (item) {
+          const r = await prefetch(item)
+          out.items++; out.images += r.done; out.tooLarge += r.tooLarge; out.failed += r.failed
         }
       } catch {
         out.failed++
@@ -228,5 +231,50 @@ export function createMethodsService({ store, api, isOnline = () => true }) {
     return out
   }
 
-  return { loadList, loadMethod, getMedia, getFreshUrl, prefetch, prefetchAll }
+  return { loadList, loadItem, getMedia, getFreshUrl, prefetch, prefetchAll }
+}
+
+// Fiches méthodes : mêmes fonctions qu'avant, sous leurs noms d'origine.
+export function createMethodsService({ store, api, isOnline = () => true }) {
+  const svc = createCatalogService({
+    isOnline,
+    minVersion: 2,
+    mediaKeysOf: (m) => [...imageKeys(m), ...(m.support || []).map((s) => s.key)],
+    store: {
+      getList: store.getMethodsList, saveList: store.saveMethodsList, touchList: store.touchMethodsList,
+      getItem: store.getMethod, saveItem: store.saveMethod, touchItem: store.touchMethod,
+      getMedia: store.getMethodMedia, saveMedia: store.saveMethodMedia, listMediaKeys: store.listMethodMediaKeys
+    },
+    api: { list: api.methods, item: api.method, media: api.methodMedia }
+  })
+  return {
+    loadList: svc.loadList,
+    loadMethod: async (id) => { const r = await svc.loadItem(id); return { method: r.item, fromCache: r.fromCache, error: r.error } },
+    getMedia: svc.getMedia,
+    getFreshUrl: svc.getFreshUrl,
+    prefetch: svc.prefetch,
+    prefetchAll: async (items, opts) => { const r = await svc.prefetchAll(items, opts); return { methods: r.items, failed: r.failed, images: r.images, tooLarge: r.tooLarge } }
+  }
+}
+
+// Liste des machines : photos du site gardées hors ligne.
+export function createMachinesService({ store, api, isOnline = () => true }) {
+  const svc = createCatalogService({
+    isOnline,
+    mediaKeysOf: (m) => (m.photos || []).map((p) => p.key),
+    store: {
+      getList: store.getList, saveList: store.saveList, touchList: store.touchList,
+      getItem: store.getItem, saveItem: store.saveItem, touchItem: store.touchItem,
+      getMedia: store.getMedia, saveMedia: store.saveMedia, listMediaKeys: store.listMediaKeys
+    },
+    api: { list: api.machines, item: api.machine, media: api.machineMedia }
+  })
+  return {
+    loadList: svc.loadList,
+    loadMachine: async (id) => { const r = await svc.loadItem(id); return { machine: r.item, fromCache: r.fromCache, error: r.error } },
+    getMedia: svc.getMedia,
+    getFreshUrl: svc.getFreshUrl,
+    prefetch: svc.prefetch,
+    prefetchAll: svc.prefetchAll
+  }
 }

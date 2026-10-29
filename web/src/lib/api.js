@@ -95,6 +95,18 @@ export const api = {
   // Image / fichier d'une fiche : { name, mime, size, data } | { …, tooLarge:true, url } | (mode 'url') { name, url }
   methodMedia: ({ page, key, mode }) => get({ action: 'methodMedia', page, key, mode: mode || 'data' }, 60000),
 
+  // Liste des machines (lecture seule), même principe.
+  machines: ({ sinceRev } = {}) => get({ action: 'machines', sinceRev: sinceRev || '' }, 45000),
+  machine: ({ id, sinceEdited }) => get({ action: 'machine', id, sinceEdited: sinceEdited || '' }, 45000),
+  machineMedia: ({ page, key, mode }) => get({ action: 'machineMedia', page, key, mode: mode || 'data' }, 60000),
+
+  // Racks et casiers KO.
+  racksOverview: ({ sinceRev } = {}) => get({ action: 'racksOverview', sinceRev: sinceRev || '' }, 45000),
+  racks: ({ site, sinceRev }) => get({ action: 'racks', site, sinceRev: sinceRev || '' }, 45000),
+  // Envois qui passent par la file d'attente locale (lib/outbox.js) : `id` rend le rejeu sans effet.
+  rackDiagnosis: (p) => post({ action: 'rackDiagnosis', ...p }, 45000),
+  methodComment: (p) => post({ action: 'methodComment', ...p }, 45000),
+
   // Peut durer longtemps (transfert des photos vers Notion) : le GAS s'arrête à 6 min.
   syncReport: (payload) => post({ action: 'syncReport', ...payload }, 330000)
 }

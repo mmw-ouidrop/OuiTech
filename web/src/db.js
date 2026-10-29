@@ -1,5 +1,5 @@
 // ============================================================================
-//  Base locale (IndexedDB via Dexie) — source de vérité hors ligne  (schéma v2)
+//  Base locale (IndexedDB via Dexie) — source de vérité hors ligne  (schéma v4)
 // ============================================================================
 //
 //  Store `interventions` — une fiche par mission
@@ -28,6 +28,12 @@
 //  Store `method_media`  — images / fichiers des fiches : id = `pageId|clé` PK, pageId (index),
 //                          blob, mime, name, size, fetchedAt. Les adresses Notion expirent au bout
 //                          d'environ une heure : on ne garde jamais d'adresse, seulement le fichier.
+//
+//  Stores `machines_index`, `machines`, `machine_media` — idem, pour la liste des machines (schéma v4).
+//
+//  Store `racks_overview` (une ligne 'overview') et `racks_sites` (une ligne par site : liste des racks/casiers KO)
+//  Store `outbox`        — envois en attente (commentaires de méthode, diagnostics de racks) : id PK, kind,
+//                          payload, createdAt, status 'pending' | 'failed', attempts, lastError  (schéma v5)
 //
 //  `createStore(nom)` crée une base indépendante (tests à deux appareils) ; les
 //  exports nommés ci-dessous sont ceux de la base de l'application.
@@ -110,6 +116,16 @@ export function createStore(name = 'ouidrop-interventions') {
     methods_index: 'key',
     methods: 'id, title',
     method_media: 'id, pageId'
+  })
+  db.version(4).stores({
+    machines_index: 'key',
+    machines: 'id, title',
+    machine_media: 'id, pageId'
+  })
+  db.version(5).stores({
+    racks_overview: 'key',
+    racks_sites: 'siteId',
+    outbox: 'id, kind, createdAt'
   })
 
   /* ── utilitaires internes (à appeler dans une transaction) ── */
@@ -432,40 +448,80 @@ export function createStore(name = 'ouidrop-interventions') {
       await db.interventions.delete(id)
     })
 
-  /* ───────────────────────────── Fiches méthodes ───────────────────────────── */
+  /* ─────────────── Catalogues en lecture seule (méthodes, machines) ─────────────── */
 
-  const getMethodsList = () => db.methods_index.get('list')
-  const saveMethodsList = (list) => db.methods_index.put({ key: 'list', rev: list.rev, items: list.items, fetchedAt: now() })
-  const touchMethodsList = () => db.methods_index.update('list', { fetchedAt: now() })
-
-  const getMethod = (id) => db.methods.get(id)
-  const listCachedMethodIds = async () => new Set(await db.methods.toCollection().primaryKeys())
-  const saveMethod = (m) => db.methods.put({ ...m, fetchedAt: now() })
-  const touchMethod = (id) => db.methods.update(id, { fetchedAt: now() })
-
-  const mediaId = (pageId, key) => `${pageId}|${key}`
-  const getMethodMedia = (pageId, key) => db.method_media.get(mediaId(pageId, key))
-  const listMethodMediaKeys = async (pageId) =>
-    new Set((await db.method_media.where('pageId').equals(pageId).primaryKeys()).map((id) => id.slice(pageId.length + 1)))
-  const saveMethodMedia = (pageId, key, { blob, mime, name }) =>
-    db.method_media.put({ id: mediaId(pageId, key), pageId, blob, mime: mime || blob.type, name: name || '', size: blob.size, fetchedAt: now() })
-
-  // Efface tout ce qui vient des fiches méthodes (les missions et leurs photos ne sont pas touchées).
-  const clearMethodsCache = () =>
-    db.transaction('rw', db.methods_index, db.methods, db.method_media, async () => {
-      await db.methods_index.clear(); await db.methods.clear(); await db.method_media.clear()
-    })
-
-  // Poids du cache des fiches (octets de médias + nombre de fiches).
-  async function methodsCacheStats() {
-    let bytes = 0
-    await db.method_media.each((r) => { bytes += r.size || 0 })
-    return { methods: await db.methods.count(), media: await db.method_media.count(), bytes }
+  // Trois tables par catalogue : liste (une ligne), fiches, médias. Un média = un fichier gardé sur l'appareil.
+  function catalog(indexTbl, itemTbl, mediaTbl) {
+    const mediaId = (pageId, key) => `${pageId}|${key}`
+    return {
+      getList: () => db[indexTbl].get('list'),
+      saveList: (list) => db[indexTbl].put({ key: 'list', rev: list.rev, items: list.items, fetchedAt: now() }),
+      touchList: () => db[indexTbl].update('list', { fetchedAt: now() }),
+      getItem: (id) => db[itemTbl].get(id),
+      listCachedIds: async () => new Set(await db[itemTbl].toCollection().primaryKeys()),
+      saveItem: (m) => db[itemTbl].put({ ...m, fetchedAt: now() }),
+      touchItem: (id) => db[itemTbl].update(id, { fetchedAt: now() }),
+      getMedia: (pageId, key) => db[mediaTbl].get(mediaId(pageId, key)),
+      listMediaKeys: async (pageId) =>
+        new Set((await db[mediaTbl].where('pageId').equals(pageId).primaryKeys()).map((id) => id.slice(pageId.length + 1))),
+      saveMedia: (pageId, key, { blob, mime, name }) =>
+        db[mediaTbl].put({ id: mediaId(pageId, key), pageId, blob, mime: mime || blob.type, name: name || '', size: blob.size, fetchedAt: now() }),
+      // Efface tout ce qui vient de ce catalogue (les missions et leurs photos ne sont pas touchées).
+      clear: () => db.transaction('rw', db[indexTbl], db[itemTbl], db[mediaTbl], async () => {
+        await db[indexTbl].clear(); await db[itemTbl].clear(); await db[mediaTbl].clear()
+      }),
+      stats: async () => {
+        let bytes = 0
+        await db[mediaTbl].each((r) => { bytes += r.size || 0 })
+        return { items: await db[itemTbl].count(), media: await db[mediaTbl].count(), bytes }
+      }
+    }
   }
+  /* ── Racks et casiers KO : copies locales par site ── */
+  const getRacksOverview = () => db.racks_overview.get('overview')
+  const saveRacksOverview = (o) => db.racks_overview.put({ key: 'overview', rev: o.rev, total: o.total, sites: o.sites, fetchedAt: now() })
+  const touchRacksOverview = () => db.racks_overview.update('overview', { fetchedAt: now() })
+  const getRacksSite = (siteId) => db.racks_sites.get(siteId)
+  const listRacksSites = () => db.racks_sites.toArray()
+  const saveRacksSite = (siteId, d) => db.racks_sites.put({ siteId, rev: d.rev, site: d.site, states: d.states, items: d.items, fetchedAt: now() })
+  const touchRacksSite = (siteId) => db.racks_sites.update(siteId, { fetchedAt: now() })
+  const clearRacksCache = () => db.transaction('rw', db.racks_overview, db.racks_sites, async () => {
+    await db.racks_overview.clear(); await db.racks_sites.clear()
+  })
+
+  /* ── Envois en attente (hors ligne) ── */
+  const outboxAdd = async (kind, payload) => {
+    const entry = { id: uuid(), kind, payload, createdAt: now(), status: 'pending', attempts: 0, lastError: null }
+    await db.outbox.add(entry)
+    return entry
+  }
+  const outboxList = () => db.outbox.orderBy('createdAt').toArray()
+  const outboxUpdate = (id, patch) => db.outbox.update(id, patch)
+  const outboxRemove = (id) => db.outbox.delete(id)
+
+  const methodsCat = catalog('methods_index', 'methods', 'method_media')
+  const machinesCat = catalog('machines_index', 'machines', 'machine_media')
+
+  // Noms historiques (fiches méthodes).
+  const getMethodsList = methodsCat.getList
+  const saveMethodsList = methodsCat.saveList
+  const touchMethodsList = methodsCat.touchList
+  const getMethod = methodsCat.getItem
+  const listCachedMethodIds = methodsCat.listCachedIds
+  const saveMethod = methodsCat.saveItem
+  const touchMethod = methodsCat.touchItem
+  const getMethodMedia = methodsCat.getMedia
+  const listMethodMediaKeys = methodsCat.listMediaKeys
+  const saveMethodMedia = methodsCat.saveMedia
+  const clearMethodsCache = methodsCat.clear
+  const methodsCacheStats = async () => { const s = await methodsCat.stats(); return { methods: s.items, media: s.media, bytes: s.bytes } }
 
   return {
     getMethodsList, saveMethodsList, touchMethodsList, getMethod, listCachedMethodIds, saveMethod, touchMethod,
     getMethodMedia, listMethodMediaKeys, saveMethodMedia, clearMethodsCache, methodsCacheStats,
+    methodsCatalog: methodsCat, machinesCatalog: machinesCat,
+    getRacksOverview, saveRacksOverview, touchRacksOverview, getRacksSite, listRacksSites, saveRacksSite, touchRacksSite, clearRacksCache,
+    outboxAdd, outboxList, outboxUpdate, outboxRemove,
     db, getIntervention, listInterventions, findByReference, listPhotos, saveMission, setFields,
     addPhoto, removePhoto, addCustomField, removeCustomField, setReportStatus, resolveConflict,
     dismissNotice, listNeedingSync, beginSync, endSync, setPhotoUploaded, failPhoto,
@@ -479,6 +535,9 @@ const store = createStore(globalThis.__OUIDROP_DB_NAME__ || 'ouidrop-interventio
 export const {
   getMethodsList, saveMethodsList, touchMethodsList, getMethod, listCachedMethodIds, saveMethod, touchMethod,
   getMethodMedia, listMethodMediaKeys, saveMethodMedia, clearMethodsCache, methodsCacheStats,
+  methodsCatalog, machinesCatalog,
+  getRacksOverview, saveRacksOverview, touchRacksOverview, getRacksSite, listRacksSites, saveRacksSite, touchRacksSite, clearRacksCache,
+  outboxAdd, outboxList, outboxUpdate, outboxRemove,
   db, getIntervention, listInterventions, findByReference, listPhotos, saveMission, setFields,
   addPhoto, removePhoto, addCustomField, removeCustomField, setReportStatus, resolveConflict,
   dismissNotice, listNeedingSync, beginSync, endSync, setPhotoUploaded, failPhoto,
