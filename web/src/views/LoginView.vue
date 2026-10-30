@@ -53,7 +53,7 @@ async function submit() {
       <BrandIcon :height="64" />
       <BrandWordmark :height="34" />
     </div>
-    <h1 class="login__title">Interventions</h1>
+    <h1 class="login__title">OuiTech</h1>
     <p class="muted">Outil des techniciens OUIDROP. Accès réservé.</p>
 
     <p v-if="loginNotice" class="note" role="status">{{ loginNotice }}</p>

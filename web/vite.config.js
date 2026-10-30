@@ -20,9 +20,9 @@ export default defineConfig({
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
 
       manifest: {
-        name: 'OUIDROP Interventions',
-        short_name: 'OUIDROP FI',
-        description: "Comptes rendus d'intervention, même sans réseau.",
+        name: 'OuiTech',
+        short_name: 'OuiTech',
+        description: "OuiTech : l'outil terrain OUIDROP, même sans réseau.",
         lang: 'fr',
         start_url: './',
         scope: './',
