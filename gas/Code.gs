@@ -187,6 +187,10 @@ function doGet(e) {
         return ok_(getRacksOverview_(p));
       case 'racks':
         return ok_(getRacks_(p));
+      case 'racksSearch':
+        return ok_(searchRacks_(p));
+      case 'rackComments':
+        return ok_(getRackComments_(p));
       default:
         throw new ApiError_('UNKNOWN_ACTION', 'Action GET inconnue : ' + p.action);
     }
@@ -209,6 +213,12 @@ function doPost(e) {
         return ok_(postMethodComment_(body));
       case 'rackDiagnosis':
         return ok_(postRackDiagnosis_(body));
+      case 'rackComment':
+        authorize_(body.session, 'support');
+        return ok_(postRackComment_(body));
+      case 'rackSetState':
+        authorize_(body.session, 'support');
+        return ok_(postRackState_(body));
       default:
         throw new ApiError_('UNKNOWN_ACTION', 'Action POST inconnue : ' + body.action);
     }

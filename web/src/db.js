@@ -483,7 +483,7 @@ export function createStore(name = 'ouidrop-interventions') {
   const touchRacksOverview = () => db.racks_overview.update('overview', { fetchedAt: now() })
   const getRacksSite = (siteId) => db.racks_sites.get(siteId)
   const listRacksSites = () => db.racks_sites.toArray()
-  const saveRacksSite = (siteId, d) => db.racks_sites.put({ siteId, rev: d.rev, site: d.site, states: d.states, items: d.items, fetchedAt: now() })
+  const saveRacksSite = (siteId, d) => db.racks_sites.put({ siteId, rev: d.rev, all: !!d.all, site: d.site, states: d.states, stateOptions: d.stateOptions || [], diagState: d.diagState || '', koStates: d.koStates || [], items: d.items, fetchedAt: now() })
   const touchRacksSite = (siteId) => db.racks_sites.update(siteId, { fetchedAt: now() })
   const clearRacksCache = () => db.transaction('rw', db.racks_overview, db.racks_sites, async () => {
     await db.racks_overview.clear(); await db.racks_sites.clear()

@@ -34,7 +34,7 @@ function submit() {
       <label for="dg-comment">Commentaire (facultatif)</label>
       <textarea id="dg-comment" v-model="comment" class="input dg__ta" rows="3" :maxlength="MAX" placeholder="Ce que vous avez constaté ou fait…"></textarea>
     </div>
-    <p class="small muted">L’état dans Notion ne change pas : l’équipe vérifie votre diagnostic avant toute remise en service.</p>
+    <p class="small muted">Enregistrer fait passer l’élément en « Diag tech » : l’équipe vérifie votre diagnostic, puis valide (ou non) le nouvel état.</p>
     <div class="dg__actions">
       <button class="btn" :disabled="!state || busy">{{ busy ? 'Enregistrement…' : 'Enregistrer' }}</button>
       <button type="button" class="btn btn--ghost" @click="emit('cancel')">Annuler</button>

@@ -95,7 +95,7 @@ pour que les données ne soient pas purgées par Safari.
 
 Menu latéral (tiroir sur téléphone, colonne fixe sur grand écran) : Accueil · Fiches et CR · Méthodes · Machines ·
 Racks et casiers KO · Inventaires · Réglages. **Inventaires est annoncé mais pas encore
-développé** ; **Méthodes**, **Machines** et **Racks et casiers KO** sont disponibles (sections suivantes). *Réglages* : nom, thème, taille du texte, synchronisation, stockage, déconnexion.
+développé** ; **Méthodes**, **Machines** et **Racks et casiers KO** sont disponibles (sections suivantes). *Réglages* : nom, thème, taille du texte, synchronisation, stockage, déconnexion. **Stockage** : liste des fiches d'intervention gardées sur l'appareil (suppression une à une — confirmation si la fiche contient des saisies non envoyées —, ou « Retirer toutes les fiches déjà envoyées »), et suppression séparée des copies Méthodes / Machines / Racks. La page *CR d'intervention* permet aussi de supprimer une fiche locale (icône corbeille). Un champ ajouté à un CR se retire avec une petite icône corbeille.
 
 ### Méthodes (fiches de maintenance)
 
@@ -158,20 +158,32 @@ Source : la base Notion « Casiers et Racks KO CZ » (ID par défaut `27e37d20ee
 **Connectez l'intégration à cette base ET à la liste des machines** (nom des sites), et **créez dans la base une colonne de type Texte
 nommée « Commentaire technicien »** (autre nom : `RACKS_PROP_COMMENT`). Sans cette colonne, l'enregistrement est refusé avec un message clair.
 
-- **Écran 1 — sites** : un site par carte, avec le nombre de casiers/racks KO et « n/N diagnostiqués ».
-- **Écran 2 — un site** : deux onglets **Casiers** et **Racks** (et « Autres » s'il existe des éléments dont le nom ne commence ni par
-  « Casier » ni par « Rack »), avec le nombre de KO et de « à voir » ; tri numérique (9, 14-2, 110) ; case « Masquer ceux déjà diagnostiqués ».
-  On touche un élément : quatre gros boutons **Réparé · Non réparable · Laissé en l'état · À surveiller**, un commentaire facultatif,
-  **Enregistrer**. L'élément affiche aussitôt son diagnostic (signé, daté) ; l'historique est consultable.
-- **Ce qui est écrit dans Notion** : la colonne « État » **n'est jamais modifiée** (l'élément reste KO pour que l'équipe vérifie avant
-  remise en service). Le diagnostic va dans « Commentaire technicien », quatre lignes :
-  `État : …` / `Date : 29/10/2026 08:22` / `Tech : Prénom Nom` / `Commentaire : …`. Les diagnostics successifs s'empilent (le plus récent
-  en haut, séparés par `---`) ; `RACKS_COMMENT_MODE=replace` ne garde que le dernier.
-- Quels éléments : ceux dont « État » vaut **KO** (`RACKS_KO_STATES`, séparés par `|`) et reliés au site par la colonne « 🤖 Site »
-  (`RACKS_PROP_SITE`, `RACKS_PROP_STATE`, `RACKS_PROP_CAUSE` si vos colonnes portent d'autres noms).
-- **Hors ligne** : sites et listes sont gardés à l'ouverture ; un diagnostic saisi sans réseau est conservé, affiché « En attente d'envoi »
-  et envoyé au retour du réseau (un bandeau indique le nombre d'envois en attente). Un envoi refusé (ex. colonne absente) reste visible avec
-  **Réessayer** / **Supprimer**.
+- **Écran 1 — sites** : un site par carte, avec le nombre de casiers/racks à traiter et « n/N diagnostiqués ».
+- **Écran 2 — un site** : onglets **Casiers**, **Racks** (et « Autres » pour les noms qui ne commencent ni par « Casier » ni par « Rack »),
+  tri numérique (9, 14-2, 110), case « Masquer ceux déjà diagnostiqués ». Case **« Afficher tous les états »** : la liste montre alors
+  tous les éléments du site (KO, Diag tech, Remis, Dead…) avec leur état, et des pastilles permettent de filtrer par état.
+- **Diagnostic technicien** : on touche un élément → quatre gros boutons **Réparé · Non réparable · Laissé en l'état · À surveiller**,
+  un commentaire facultatif, **Enregistrer**. Le diagnostic va dans « Commentaire technicien » (quatre lignes :
+  `État : …` / `Date : 29/10/2026 08:22` / `Tech : Prénom Nom` / `Commentaire : …`, les plus récents en haut, séparés par `---` ;
+  `RACKS_COMMENT_MODE=replace` ne garde que le dernier) **et l'état Notion passe de « KO » à « Diag tech »** (propriété
+  `RACKS_DIAG_STATE`, défaut « Diag tech ») pour que le support vérifie. Un élément déjà « Remis » ou « Dead » garde son état.
+  Si la colonne « État » est de type **Sélection**, l'option « Diag tech » est créée automatiquement ; si elle est de type **Statut**,
+  ajoutez la valeur « Diag tech » dans Notion (sinon l'enregistrement est refusé avec un message clair).
+- **Profil « support technique »** : sur chaque élément, un menu **« État dans Notion »** (les valeurs de la colonne) + **Appliquer**
+  pour valider ou changer l'état (ex. Diag tech → Remis). Le changement est tracé par un commentaire Notion « [Nom] État : A → B »
+  si l'intégration peut écrire des commentaires. Un technicien n'a pas ce menu (le serveur refuse : `FORBIDDEN_ROLE`).
+- **Commentaires Notion** : sur chaque élément déplié, la liste des commentaires de la page Notion (auteur, date) — c'est là que
+  l'équipe note ses diagnostics. Le support peut en **ajouter** depuis l'application (publiés sous la forme « [Prénom Nom] texte »).
+  **Dans notion.so/my-integrations, donnez à l'intégration les capacités « Read comments » et « Insert comments »** ; sans elles
+  l'application affiche un message explicite (`COMMENTS_FORBIDDEN`). La lecture demande du réseau (non gardée hors ligne).
+- **Recherche (loupe dans l'en-tête, sur toutes les pages)** : tapez un numéro (« 14 » met « Casier 14-2 » avant « Rack 1141 »),
+  et filtrez par **site**, **état** (« À traiter », « Tous les états » ou un état précis) et **type** (casier / rack). Hors ligne, la
+  recherche porte sur les sites déjà ouverts sur l'appareil.
+- Quels éléments « à traiter » : « État » égal à **KO** ou **Diag tech** (`RACKS_KO_STATES`, séparés par `|`) et reliés au site par la colonne
+  « 🤖 Site » (`RACKS_PROP_SITE`, `RACKS_PROP_STATE`, `RACKS_PROP_CAUSE` si vos colonnes portent d'autres noms).
+- **Hors ligne** : sites et listes sont gardés à l'ouverture ; un diagnostic, un changement d'état ou un commentaire saisi sans réseau est
+  conservé, affiché « En attente d'envoi » et envoyé au retour du réseau (bandeau avec le nombre d'envois en attente). Un envoi refusé
+  reste visible avec **Réessayer** / **Supprimer**.
 - Test dans l'éditeur Apps Script : `testRacks()` (KO par site, présence de la colonne de commentaire).
 
 ### Utilisation sur le terrain

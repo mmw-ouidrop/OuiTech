@@ -6,7 +6,7 @@
 //   senders : { <kind>: (payload) => Promise }
 //   onDone(entry, result) : appelé après chaque envoi réussi (mise à jour des copies locales)
 
-const PERMANENT = new Set(['BAD_REQUEST', 'NOT_FOUND', 'COLUMN_MISSING', 'AUTHOR_REQUIRED', 'CONFIG_INVALID', 'CONFIG_MISSING', 'NOTION_FORBIDDEN', 'FORBIDDEN_ROLE', 'UNKNOWN_ACTION'])
+const PERMANENT = new Set(['BAD_REQUEST', 'NOT_FOUND', 'COLUMN_MISSING', 'AUTHOR_REQUIRED', 'CONFIG_INVALID', 'CONFIG_MISSING', 'NOTION_FORBIDDEN', 'COMMENTS_FORBIDDEN', 'FORBIDDEN_ROLE', 'UNKNOWN_ACTION'])
 const AUTH = new Set(['UNAUTHORIZED', 'SESSION_EXPIRED'])
 
 export function createOutbox({ store, senders, isOnline = () => true, onDone }) {

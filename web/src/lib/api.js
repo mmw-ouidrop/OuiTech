@@ -102,10 +102,14 @@ export const api = {
 
   // Racks et casiers KO.
   racksOverview: ({ sinceRev } = {}) => get({ action: 'racksOverview', sinceRev: sinceRev || '' }, 45000),
-  racks: ({ site, sinceRev }) => get({ action: 'racks', site, sinceRev: sinceRev || '' }, 45000),
+  racks: ({ site, all, sinceRev }) => get({ action: 'racks', site, all: all ? '1' : '', sinceRev: sinceRev || '' }, 45000),
+  racksSearch: ({ q, site, state, kind }) => get({ action: 'racksSearch', q: q || '', site: site || '', state: state || '', kind: kind || '' }, 45000),
+  rackComments: ({ pageId }) => get({ action: 'rackComments', pageId }, 45000),
   // Envois qui passent par la file d'attente locale (lib/outbox.js) : `id` rend le rejeu sans effet.
   rackDiagnosis: (p) => post({ action: 'rackDiagnosis', ...p }, 45000),
   methodComment: (p) => post({ action: 'methodComment', ...p }, 45000),
+  rackSetState: (p) => post({ action: 'rackSetState', ...p }, 45000),     // profil support
+  rackComment: (p) => post({ action: 'rackComment', ...p }, 45000),       // profil support
 
   // Peut durer longtemps (transfert des photos vers Notion) : le GAS s'arrête à 6 min.
   syncReport: (payload) => post({ action: 'syncReport', ...payload }, 330000)

@@ -2,12 +2,12 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { racks } from '../lib/racksApp.js'
 import { getRacksSite } from '../db.js'
-import { splitByKind, overlayPending, diagTone, needsDiagnosis, KIND_LABELS } from '../lib/racks.js'
-import { enqueue, pendingEntries, retryEntry, discardEntry, doneTick } from '../lib/outboxApp.js'
-import { named, displayName } from '../lib/session.js'
+import { splitByKind, overlayPending, needsDiagnosis, KIND_LABELS } from '../lib/racks.js'
+import { pendingEntries, doneTick } from '../lib/outboxApp.js'
+import { named } from '../lib/session.js'
 import { online } from '../lib/online.js'
 import { formatDateTime } from '../lib/format.js'
-import DiagnosisForm from '../components/DiagnosisForm.vue'
+import RackItem from '../components/RackItem.vue'
 
 const props = defineProps({ site: { type: String, required: true } })
 
@@ -16,17 +16,25 @@ const loading = ref(true)
 const error = ref('')
 const stale = ref('')
 const tab = ref('casier')
-const openId = ref('')
-const busy = ref(false)
 const hideDone = ref(false)
+const all = ref(false)          // true : tous les états (KO, Diag tech, Remis, Dead…)
+const stateFilter = ref('')     // en mode « tous les états » : un état précis, '' = tous
 
 const states = computed(() => (data.value ? data.value.states : []))
-const items = computed(() => overlayPending(data.value ? data.value.items : [], pendingEntries.value, states.value, (ts) => formatDateTime(ts)))
-const groups = computed(() => splitByKind(items.value))
+const meta = computed(() => ({ diagState: data.value ? data.value.diagState : '', koStates: data.value ? data.value.koStates || [] : [] }))
+const items = computed(() => overlayPending(data.value ? data.value.items : [], pendingEntries.value, states.value, (ts) => formatDateTime(ts), meta.value))
+const byState = computed(() => items.value.filter((i) => !all.value || !stateFilter.value || i.state === stateFilter.value))
+const groups = computed(() => splitByKind(byState.value))
 const tabs = computed(() => ['casier', 'rack', 'autre'].filter((k) => k !== 'autre' || groups.value.autre.length))
 const shown = computed(() => groups.value[tab.value].filter((i) => !hideDone.value || needsDiagnosis(i)))
 const todo = (k) => groups.value[k].filter(needsDiagnosis).length
 const siteTitle = computed(() => (data.value ? data.value.site.title : ''))
+const stateChips = computed(() => {
+  const present = new Set(items.value.map((i) => i.state).filter(Boolean))
+  const order = (data.value && data.value.stateOptions) || []
+  return [...order.filter((o) => present.has(o)), ...[...present].filter((o) => !order.includes(o))]
+})
+const countOf = (st) => items.value.filter((i) => i.state === st).length
 
 const MESSAGES = {
   OFFLINE_EMPTY: 'Ce site n’est pas encore sur l’appareil et il n’y a pas de réseau. Ouvrez-le une première fois avec du réseau.',
@@ -38,9 +46,9 @@ async function load() {
   error.value = ''
   stale.value = ''
   try {
-    const r = await racks.loadSite(props.site)
+    const r = await racks.loadSite(props.site, { all: all.value })
     data.value = r.data
-    if (r.error === 'OFFLINE_EMPTY') error.value = MESSAGES.OFFLINE_EMPTY
+    if (r.error === 'OFFLINE_EMPTY') error.value = all.value ? 'La liste de tous les états n’est pas encore sur l’appareil : ouvrez-la une première fois avec du réseau.' : MESSAGES.OFFLINE_EMPTY
     else if (r.error) stale.value = 'Liste affichée depuis la copie de l’appareil (le serveur ne répond pas).'
     // Onglet de départ : celui qui contient du travail.
     if (r.data && !groups.value[tab.value].length) tab.value = ['casier', 'rack', 'autre'].find((k) => groups.value[k].length) || 'casier'
@@ -51,23 +59,19 @@ async function load() {
   }
 }
 
-async function save(item, { state, comment }) {
-  busy.value = true
-  try {
-    await enqueue('rack_diag', { pageId: item.id, state, comment, name: displayName.value })
-    openId.value = ''
-  } finally {
-    busy.value = false
-  }
+function toggleAll() {
+  all.value = !all.value
+  stateFilter.value = ''
+  load()
 }
 
-// Un envoi vient de partir : la copie locale du site a été mise à jour, on la relit sans réseau.
+// Un envoi vient de partir : les copies locales du site ont été mises à jour, on les relit sans réseau.
 watch(doneTick, async () => {
-  const rec = await getRacksSite(props.site)
+  const rec = await getRacksSite(all.value ? props.site + ':all' : props.site)
   if (rec) data.value = rec
 })
 onMounted(load)
-watch(() => props.site, load)
+watch(() => props.site, () => { all.value = false; stateFilter.value = ''; load() })
 watch(online, (on) => { if (on) load() })
 </script>
 
@@ -82,10 +86,26 @@ watch(online, (on) => { if (on) load() })
   <template v-if="data">
     <p v-if="!named" class="note small">Renseignez votre prénom et nom dans <router-link to="/reglages">Réglages</router-link> pour enregistrer des diagnostics.</p>
 
+    <div class="toolbar">
+      <label class="check">
+        <input type="checkbox" :checked="all" @change="toggleAll" />
+        <span>Afficher tous les états</span>
+      </label>
+      <label v-if="groups[tab].length" class="check">
+        <input v-model="hideDone" type="checkbox" />
+        <span>Masquer ceux déjà diagnostiqués</span>
+      </label>
+    </div>
+
+    <div v-if="all && stateChips.length" class="filters" role="group" aria-label="Filtrer par état">
+      <button type="button" class="fchip" :class="{ 'fchip--on': !stateFilter }" :aria-pressed="!stateFilter" @click="stateFilter = ''">Tous ({{ items.length }})</button>
+      <button v-for="st in stateChips" :key="st" type="button" class="fchip" :class="{ 'fchip--on': stateFilter === st }" :aria-pressed="stateFilter === st" @click="stateFilter = st">{{ st }} ({{ countOf(st) }})</button>
+    </div>
+
     <div class="tabs" role="tablist" aria-label="Type d’élément">
       <button
         v-for="k in tabs" :key="k" type="button" role="tab" class="tab" :class="{ 'tab--on': tab === k }"
-        :aria-selected="tab === k" @click="tab = k; openId = ''"
+        :aria-selected="tab === k" @click="tab = k"
       >
         <span class="tab__name">{{ KIND_LABELS[k] }}</span>
         <span class="tab__count">{{ groups[k].length }}</span>
@@ -93,48 +113,14 @@ watch(online, (on) => { if (on) load() })
       </button>
     </div>
 
-    <label v-if="groups[tab].length" class="check">
-      <input v-model="hideDone" type="checkbox" />
-      <span>Masquer ceux déjà diagnostiqués</span>
-    </label>
-
-    <p v-if="!groups[tab].length" class="card muted">Aucun {{ tab === 'rack' ? 'rack' : tab === 'casier' ? 'casier' : 'élément' }} KO sur ce site.</p>
+    <p v-if="!groups[tab].length" class="card muted">Aucun {{ tab === 'rack' ? 'rack' : tab === 'casier' ? 'casier' : 'élément' }}{{ all ? '' : ' KO' }} sur ce site.</p>
     <p v-else-if="!shown.length" class="card muted">Tout est diagnostiqué ici. ✓</p>
 
     <ul class="list">
-      <li v-for="it in shown" :key="it.id" class="item" :class="{ 'item--open': openId === it.id }">
-        <button type="button" class="item__head" :aria-expanded="openId === it.id" @click="openId = openId === it.id ? '' : it.id">
-          <span class="item__main">
-            <span class="item__name">{{ it.title.trim() }}</span>
-            <span v-if="it.cause.length" class="item__cause small muted">{{ it.cause.join(', ') }}</span>
-          </span>
-          <span v-if="it.diag" class="chip" :class="'chip--' + diagTone(it.diag.state, states)">{{ it.diag.state }}</span>
-          <span v-else class="chip chip--danger">À diagnostiquer</span>
-        </button>
-
-        <div v-if="it.diag" class="item__diag small">
-          <span class="muted">{{ it.diag.by }}<template v-if="it.diag.at"> · {{ it.diag.at }}</template></span>
-          <span v-if="it.pending === 'pending'" class="chip">En attente d’envoi</span>
-          <span v-if="it.pending === 'failed'" class="chip chip--danger">Non envoyé</span>
-          <p v-if="it.diag.comment" class="item__comment">{{ it.diag.comment }}</p>
-        </div>
-        <div v-if="it.pending === 'failed'" class="item__fail small">
-          <p class="alert">{{ it.pendingError && it.pendingError.message }}</p>
-          <button type="button" class="btn btn--ghost" @click="retryEntry(it.pendingId)">Réessayer</button>
-          <button type="button" class="btn btn--ghost" @click="discardEntry(it.pendingId)">Supprimer</button>
-        </div>
-
-        <template v-if="openId === it.id">
-          <p v-if="!named" class="note small">Renseignez votre nom dans Réglages pour enregistrer.</p>
-          <DiagnosisForm v-else :states="states" :busy="busy" @submit="save(it, $event)" @cancel="openId = ''" />
-          <details v-if="it.history && it.history.length" class="item__hist small">
-            <summary>Historique ({{ it.history.length }})</summary>
-            <ul>
-              <li v-for="(h, i) in it.history" :key="i"><strong>{{ h.state }}</strong> · {{ h.by }} · {{ h.at }}<span v-if="h.comment"> — {{ h.comment }}</span></li>
-            </ul>
-          </details>
-        </template>
-      </li>
+      <RackItem
+        v-for="it in shown" :key="it.id" :item="it" :states="states" :state-options="data.stateOptions || []"
+        :diag-state="data.diagState || 'Diag tech'" :ko-states="data.koStates || ['KO']"
+      />
     </ul>
   </template>
 </template>
@@ -150,15 +136,8 @@ watch(online, (on) => { if (on) load() })
 .check { display: flex; align-items: center; gap: var(--s-3); min-height: var(--tap); cursor: pointer; }
 .check input { width: 22px; height: 22px; accent-color: var(--accent); }
 .list { list-style: none; margin: var(--s-2) 0 0; padding: 0; display: grid; gap: var(--s-3); }
-.item { border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); padding: var(--s-2) var(--s-3) var(--s-3); }
-.item--open { border-color: var(--accent); }
-.item__head { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); width: 100%; min-height: var(--tap); padding: var(--s-2) 0; background: none; border: 0; color: var(--text); text-align: left; cursor: pointer; font: inherit; }
-.item__main { display: grid; min-width: 0; }
-.item__name { font: 700 26px/1.1 var(--f-display); color: var(--heading); overflow-wrap: anywhere; }
-.item__diag { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); }
-.item__comment { flex-basis: 100%; margin: 0; white-space: pre-line; overflow-wrap: anywhere; }
-.item__fail { display: flex; flex-wrap: wrap; gap: var(--s-2); align-items: center; margin-top: var(--s-2); }
-.item__fail .alert { flex-basis: 100%; margin: 0; }
-.item__hist { margin-top: var(--s-3); }
-.item__hist ul { margin: var(--s-2) 0 0; padding-left: var(--s-4); }
+.filters { display: flex; flex-wrap: wrap; gap: var(--s-2); margin: var(--s-2) 0; }
+.fchip { min-height: 40px; padding: 0 var(--s-3); border: 2px solid var(--line-strong); border-radius: 999px; background: var(--surface); color: var(--text); font: inherit; font-weight: 700; cursor: pointer; }
+.fchip--on { border-color: var(--accent); background: var(--btn-bg); color: var(--btn-text); }
+.toolbar { display: flex; flex-wrap: wrap; gap: var(--s-4); align-items: center; }
 </style>

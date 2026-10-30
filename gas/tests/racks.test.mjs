@@ -65,13 +65,14 @@ test('colonne État de type « Statut » : filtre adapté automatiquement', () =
   assert.equal(get({ action: 'racks', site: s.nid }).data.items.length, 1);
 });
 
-test('diagnostic : écrit dans « Commentaire technicien » (4 lignes), jamais dans « État » ; historique, plus récent en haut', () => {
+test('diagnostic : écrit dans « Commentaire technicien » (4 lignes) et fait passer KO → Diag tech ; historique, plus récent en haut', () => {
   const w = world(); const { ordener, r } = seed(w); const { post, get } = api(w);
   const a = post({ action: 'rackDiagnosis', pageId: r.c110.nid, state: 'unrepairable', comment: 'Charnière cassée', id: 'd1', name: 'Karim Benali' });
   assert.equal(a.ok, true, JSON.stringify(a));
   assert.equal(a.data.diag.state, 'Non réparable'); assert.equal(a.data.diag.by, 'Karim Benali'); assert.equal(a.data.diag.comment, 'Charnière cassée');
   assert.match(commentOf(w, r.c110.nid), /^État : Non réparable\nDate : .+\nTech : Karim Benali\nCommentaire : Charnière cassée$/);
-  assert.equal(r.c110.page.properties['État'].select.name, 'KO', 'l’état Notion n’est pas modifié');
+  assert.equal(a.data.state, 'Diag tech');
+  assert.equal(r.c110.page.properties['État'].select.name, 'Diag tech', 'l’état passe de KO à Diag tech pour contrôle du support');
 
   w.now += 3600e3;
   const b = post({ action: 'rackDiagnosis', pageId: r.c110.nid, state: 'repaired', comment: '', id: 'd2', name: 'Ana Roy' });
@@ -144,6 +145,98 @@ test('médias : la colonne « Medias » garde l’ordre de Notion ; lien externe
   assert.deepEqual(d.gallery.map((g) => g.key), ['p:Medias:0', 'p:Medias:1', 'p:Medias:2', 'p:Medias:3']);
   const first = get({ action: 'methodMedia', page: m.nid, key: 'p:Medias:3' });
   assert.equal(first.data.mime, 'image/png');
+});
+
+const setup2 = () => {
+  const w = world(); const o = seed(w); const a = api(w);
+  return { w, ...o, ...a, sup: api(w, 'support').post };
+};
+
+test('« Diag tech » reste dans la vue des éléments à traiter ; un élément Remis garde son état après diagnostic', () => {
+  const { w, ordener, r, post, get } = setup2();
+  post({ action: 'rackDiagnosis', pageId: r.c9.nid, state: 'watch', comment: '', id: 'a', name: 'K' });
+  const o = get({ action: 'racks', site: ordener.nid }).data;
+  assert.equal(o.items.find((i) => i.title === 'casier 9').state, 'Diag tech');
+  assert.equal(o.items.length, 5);
+  post({ action: 'rackDiagnosis', pageId: r.ok.nid, state: 'repaired', comment: '', id: 'b', name: 'K' });
+  assert.equal(r.ok.page.properties['État'].select.name, 'Remis');
+});
+
+test('colonne État de type Statut : valeur « Diag tech » absente → CONFIG_INVALID', () => {
+  const w = world(); const s = site(w, 'Dropper X'); const { post } = api(w);
+  const c = w.addRack({ title: 'Casier 1', site: s.id, stateType: 'status' });
+  w.stateOptions = ['KO', 'Remis'];
+  assert.equal(post({ action: 'rackDiagnosis', pageId: c.nid, state: 'watch', comment: '', id: 'x', name: 'K' }).error.code, 'CONFIG_INVALID');
+});
+
+test('tous les états : liste d’un site avec all=1, état de chaque élément, options d’état', () => {
+  const { w, ordener, get } = setup2();
+  w.stateOptions = ['KO', 'Diag tech', 'Remis', 'Dead'];
+  const k = get({ action: 'racks', site: ordener.nid }).data;
+  const a = get({ action: 'racks', site: ordener.nid, all: '1' }).data;
+  assert.equal(k.items.length, 5); assert.equal(a.items.length, 6); assert.equal(a.all, true);
+  assert.equal(a.items.find((i) => i.title === 'Casier 45').state, 'Remis');
+  assert.deepEqual(a.stateOptions, ['KO', 'Diag tech', 'Remis', 'Dead']);
+  assert.notEqual(k.rev, a.rev);
+});
+
+test('recherche : numéro exact en premier, filtres site / état / type, sans critère refusé', () => {
+  const { w, ordener, lyon, get } = setup2();
+  const r1 = get({ action: 'racksSearch', q: '14' });
+  assert.equal(r1.ok, true, JSON.stringify(r1));
+  assert.deepEqual(r1.data.items.map((i) => i.title), ['Casier 14-2', 'Rack 1141']);
+  assert.equal(r1.data.items[0].siteTitle, 'Dropper Ordener'); assert.equal(r1.data.items[0].siteId, ordener.nid);
+  assert.deepEqual(get({ action: 'racksSearch', q: '14', kind: 'rack' }).data.items.map((i) => i.title), ['Rack 1141']);
+  assert.equal(get({ action: 'racksSearch', q: '45' }).data.items.length, 0, 'Remis masqué par défaut');
+  assert.equal(get({ action: 'racksSearch', q: '45', state: '*' }).data.items.length, 1);
+  assert.equal(get({ action: 'racksSearch', q: '45', state: 'Remis' }).data.items[0].state, 'Remis');
+  assert.deepEqual(get({ action: 'racksSearch', q: 'casier', site: lyon.nid }).data.items.map((i) => i.title), ['Casier 5', 'Casier 77']);
+  assert.equal(get({ action: 'racksSearch', q: '2000' }).data.items[0].siteTitle, 'Sans site');
+  assert.equal(get({ action: 'racksSearch', state: '*' }).error.code, 'BAD_REQUEST');
+  assert.equal(get({ action: 'racksSearch', state: '*', kind: 'rack' }).ok, true);
+});
+
+test('commentaires Notion : lecture (auteur Notion ou [Nom] de l’app), écriture réservée au support, rejeu, droits manquants', () => {
+  const { w, r, post, get, sup } = setup2();
+  w.users = { u1: 'Sophie Martin' };
+  w.addNotionComment(r.c110.nid, 'Diag : charnière à changer', 'u1');
+  const g = get({ action: 'rackComments', pageId: r.c110.nid });
+  assert.equal(g.ok, true, JSON.stringify(g));
+  assert.deepEqual(g.data.comments.map((c) => [c.by, c.text]), [['Sophie Martin', 'Diag : charnière à changer']]);
+  assert.match(g.data.comments[0].at, /^20\/10\/2026/);
+
+  assert.equal(post({ action: 'rackComment', pageId: r.c110.nid, text: 'x', id: 'k1', name: 'K' }).error.code, 'FORBIDDEN_ROLE');
+  const p1 = sup({ action: 'rackComment', pageId: r.c110.nid, text: 'Validé, on commande la pièce', id: 'k2', name: 'Léa Dupont' });
+  assert.equal(p1.ok, true, JSON.stringify(p1));
+  assert.deepEqual(p1.data.comments.map((c) => c.by), ['Sophie Martin', 'Léa Dupont']);
+  assert.equal(w.comments[1].rich_text[0].plain_text, '[Léa Dupont] Validé, on commande la pièce');
+  assert.equal(sup({ action: 'rackComment', pageId: r.c110.nid, text: 'Validé, on commande la pièce', id: 'k2', name: 'Léa Dupont' }).data.duplicate, true);
+  assert.equal(w.comments.length, 2);
+  assert.equal(sup({ action: 'rackComment', pageId: r.c110.nid, text: ' ', id: 'k3', name: 'L' }).error.code, 'BAD_REQUEST');
+  assert.equal(sup({ action: 'rackComment', pageId: r.c110.nid, text: 'x', id: 'k4', name: '' }).error.code, 'AUTHOR_REQUIRED');
+  const m = w.addMethod({ title: 'M' });
+  assert.equal(get({ action: 'rackComments', pageId: m.nid }).error.code, 'NOT_FOUND');
+  w.noComments = true;
+  assert.equal(get({ action: 'rackComments', pageId: r.c110.nid }).error.code, 'COMMENTS_FORBIDDEN');
+  assert.equal(sup({ action: 'rackComment', pageId: r.c110.nid, text: 'x', id: 'k5', name: 'L' }).error.code, 'COMMENTS_FORBIDDEN');
+});
+
+test('support : valide / change l’état (options de la base), trace en commentaire, rejeu, réservé au support', () => {
+  const { w, r, post, sup } = setup2();
+  w.stateOptions = ['KO', 'Diag tech', 'Remis', 'Dead'];
+  post({ action: 'rackDiagnosis', pageId: r.c110.nid, state: 'repaired', comment: 'ok', id: 'd', name: 'K' });
+  const body = { action: 'rackSetState', pageId: r.c110.nid, state: 'Remis', id: 's1', name: 'Léa Dupont' };
+  assert.equal(post(body).error.code, 'FORBIDDEN_ROLE');
+  const x = sup(body);
+  assert.equal(x.ok, true, JSON.stringify(x));
+  assert.deepEqual([x.data.before, x.data.state], ['Diag tech', 'Remis']);
+  assert.equal(r.c110.page.properties['État'].select.name, 'Remis');
+  assert.equal(w.comments[0].rich_text[0].plain_text, '[Léa Dupont] État : Diag tech → Remis');
+  assert.equal(sup(body).data.duplicate, true);
+  assert.equal(sup({ ...body, id: 's2', state: 'Inconnu' }).error.code, 'BAD_REQUEST');
+  w.noComments = true;
+  assert.equal(sup({ ...body, id: 's3', state: 'Dead' }).ok, true, 'la trace en commentaire est facultative');
+  assert.equal(r.c110.page.properties['État'].select.name, 'Dead');
 });
 
 test('testRacks s’exécute', () => {

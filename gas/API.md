@@ -30,7 +30,9 @@ Erreurs d'accès sur toute autre route : `UNAUTHORIZED` (absente / invalide), `S
 | `?action=machineMedia&page=<pageId>&key=<clé>&mode=data\|url` | Photo du site (même forme que `methodMedia`). |
 
 | `?action=racksOverview&sinceRev=…` | Sites ayant des racks/casiers KO : `{ rev, total, sites:[{id,title,casiers,racks,autres,total,diagnosed}] }`. |
-| `?action=racks&site=<pageId>&sinceRev=…` | KO d'un site (`site=none` : sans site) : `{ rev, site, states, items:[{id,title,kind,cause,updated,diag,history}] }`. |
+| `?action=racks&site=<pageId>&all=1&sinceRev=…` | Éléments d'un site (`site=none` : sans site) ; sans `all` : états « à traiter » (KO, Diag tech), avec `all=1` : tous. `{ rev, all, site, states, stateOptions, diagState, koStates, items:[{id,title,kind,state,cause,updated,diag,history}] }`. |
+| `?action=racksSearch&q=14&site=<id|none>&state=<nom|*>&kind=casier|rack` | Recherche (100 résultats max) : `{ items:[{…, siteId, siteTitle}], truncated, stateOptions, diagState, koStates, states }`. `state` vide = à traiter, `*` = tous. Au moins un critère. |
+| `?action=rackComments&pageId=…` | Commentaires Notion de la page : `{ comments:[{id,at,by,text}] }`. Erreur `COMMENTS_FORBIDDEN` si l'intégration n'a pas « Read comments ». |
 
 Détail des fiches méthodes (nœuds, sections, propriétés de script) : en-tête de `Methods.gs` ; machines : en-tête de `Machines.gs`.
 
@@ -66,8 +68,15 @@ editors[]      autres appareils actifs : { clientId, name, agoSec }
 `{ action:"methodComment", pageId, text, name, id }` ajoute un commentaire à la colonne « Commentaires » de la fiche (→ `{ comments }`).
 `{ action:"rackDiagnosis", pageId, state, comment, name, id }` (`state` : `repaired` | `unrepairable` | `left_as_is` | `watch`) écrit le
 diagnostic dans « Commentaire technicien » (→ `{ diag, history }`). `id` : identifiant unique de l'envoi ; un rejeu (même `id`) renvoie
-`{ duplicate:true }` sans rien écrire. Erreurs : `AUTHOR_REQUIRED`, `BAD_REQUEST`, `NOT_FOUND`, `COLUMN_MISSING` (colonne absente de la base).
+`{ duplicate:true }` sans rien écrire. `rackDiagnosis` fait aussi passer l'état Notion de KO à `RACKS_DIAG_STATE` (→ `{ diag, history, state }`). Erreurs : `AUTHOR_REQUIRED`, `BAD_REQUEST`, `NOT_FOUND`, `COLUMN_MISSING` (colonne absente de la base).
 Les fiches méthodes renvoient aussi `gallery` (colonne « Medias » dans l'ordre de Notion), `comments`, `commentsEnabled` et `v` (version du format).
+
+## POST `rackSetState` / `rackComment` (profil support)
+
+`{ action:"rackSetState", session, pageId, state, name, id }` change l'état Notion (valeur parmi `stateOptions`) et trace « [Nom] État : A → B »
+en commentaire Notion (facultatif) → `{ state, before }`. `{ action:"rackComment", session, pageId, text, name, id }` ajoute un commentaire Notion
+« [Nom] texte » → `{ comments }`. Réservés au rôle `support` (`FORBIDDEN_ROLE` sinon) ; `id` rend le rejeu sans effet.
+Erreurs : `AUTHOR_REQUIRED`, `BAD_REQUEST`, `NOT_FOUND`, `COMMENTS_FORBIDDEN`, `CONFIG_INVALID`.
 
 ## POST `uploadMedia`
 `{ action, session, fileData (base64 ou data:URL), fileName, mimeType, mediaId, reference }`

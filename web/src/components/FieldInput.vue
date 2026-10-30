@@ -121,10 +121,18 @@ const confirmRemove = ref(false)
 
     <div v-if="item.custom && !disabled" class="custom">
       <span class="small muted">Champ ajouté sur le terrain</span>
-      <button v-if="!confirmRemove" type="button" class="link" @click="confirmRemove = true">Retirer ce champ</button>
-      <span v-else class="custom__confirm">
-        <button type="button" class="link link--danger" @click="emit('remove-field')">Confirmer le retrait</button>
-        <button type="button" class="link" @click="confirmRemove = false">Annuler</button>
+      <button v-if="!confirmRemove" type="button" class="icon-btn" aria-label="Retirer ce champ" title="Retirer ce champ" @click="confirmRemove = true">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3" />
+        </svg>
+      </button>
+      <span v-else class="custom__confirm" role="group" aria-label="Confirmer le retrait du champ">
+        <button type="button" class="icon-btn icon-btn--danger" aria-label="Confirmer le retrait" title="Confirmer le retrait" @click="emit('remove-field')">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10" /></svg>
+        </button>
+        <button type="button" class="icon-btn" aria-label="Annuler" title="Annuler" @click="confirmRemove = false">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+        </button>
       </span>
     </div>
   </div>
@@ -152,6 +160,9 @@ const confirmRemove = ref(false)
 .check:has(input:disabled) { cursor: not-allowed; opacity: .75; }
 .link { justify-self: start; min-height: 44px; padding: 0 var(--s-2); border: 0; background: transparent; color: var(--accent); font: 600 var(--fs-small)/1 var(--f-body); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .link--danger { color: var(--text); }
+.icon-btn { display: inline-grid; place-items: center; width: var(--tap); height: var(--tap); padding: 0; border: 1px solid var(--line-strong); border-radius: var(--radius); background: transparent; color: var(--accent); cursor: pointer; }
+.icon-btn--danger { border-color: var(--danger); color: var(--text); box-shadow: inset 0 0 0 1px var(--danger); }
+.custom__confirm { display: inline-flex; gap: var(--s-2); }
 .conflict { margin-top: var(--s-3); }
 .conflict p { margin-bottom: var(--s-3); }
 .conflict__btns { display: flex; flex-wrap: wrap; gap: var(--s-2); }

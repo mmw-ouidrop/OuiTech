@@ -9,6 +9,7 @@ import MachinesView from './views/MachinesView.vue'
 import MachineView from './views/MachineView.vue'
 import RacksView from './views/RacksView.vue'
 import RackSiteView from './views/RackSiteView.vue'
+import RackSearchView from './views/RackSearchView.vue'
 import SettingsView from './views/SettingsView.vue'
 import ComingSoonView from './views/ComingSoonView.vue'
 import { normalizeReference, consumeUrlReference } from './lib/ref.js'
@@ -30,6 +31,7 @@ export const router = createRouter({
     { path: '/machines', name: 'machines', component: MachinesView, meta: { title: 'Machines' } },
     { path: '/machines/:id', name: 'machine', component: MachineView, props: true, meta: { title: 'Machine', section: 'machines' } },
     { path: '/racks', name: 'racks', component: RacksView, meta: { title: 'Racks et casiers KO' } },
+    { path: '/racks/recherche', name: 'rack-search', component: RackSearchView, meta: { title: 'Recherche racks et casiers', section: 'racks' } },
     { path: '/racks/:site', name: 'rack-site', component: RackSiteView, props: true, meta: { title: 'Racks et casiers KO', section: 'racks' } },
     {
       path: '/inventaires', name: 'inventaires', component: ComingSoonView, meta: { title: 'Inventaires' },

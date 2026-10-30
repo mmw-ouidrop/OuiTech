@@ -112,6 +112,7 @@ export function makeWorld() {
   };
   // Machines : propriétés données telles quelles (types Notion), pages liées (région, client) dans une autre base.
   w.machinePages = [];
+  w.comments = [];
   w.addMachine = ({ props = {}, edited = '2026-10-19T08:00:00Z', blocks = [], archived = false, parentDb }) => {
     const id = w.id();
     w.blocks[id] = { id, type: 'page' };
@@ -131,6 +132,9 @@ export function makeWorld() {
     };
     if (comment !== null) props['Commentaire technicien'] = { type: 'rich_text', rich_text: comment ? [{ type: 'text', text: { content: comment }, plain_text: comment }] : [] };
     return w.addMachine({ props, edited, parentDb: RDB });
+  };
+  w.addNotionComment = (pageNid, text, by = 'u1', created = '2026-10-20T09:30:00Z') => {
+    w.comments.push({ id: w.id(), parent: { page_id: pageNid }, created_time: created, created_by: { id: by }, rich_text: [{ plain_text: text, text: { content: text } }] });
   };
   w.addRelated = (title) => {
     const id = w.id();
@@ -212,6 +216,7 @@ export function makeWorld() {
         const sample = w.machinePages.find((p) => norm(p.parent.database_id) === RDB);
         const props = {};
         Object.entries((sample && sample.properties) || { 'État': { type: 'select' } }).forEach(([k, v]) => { props[k] = { type: v.type }; });
+        if (props['État']) props['État'][props['État'].type] = { options: (w.stateOptions || ['KO', 'Remis', 'Dead']).map((name) => ({ name })) };
         return res(200, { properties: props });
       }
       if (method === 'POST' && p0 === `/databases/${RDB}/query`) {
@@ -220,6 +225,7 @@ export function makeWorld() {
           if (f.or) return f.or.some((x) => match(page, x));
           const prop = page.properties[f.property];
           if (!prop) return false;
+          if (f.title) return prop.title.map((x) => x.plain_text).join('').toLowerCase().includes(f.title.contains.toLowerCase());
           if (f.select) { assert.equal(prop.type, 'select', 'filtre select sur une colonne ' + prop.type); return !!prop.select && prop.select.name === f.select.equals; }
           if (f.status) { assert.equal(prop.type, 'status', 'filtre status sur une colonne ' + prop.type); return !!prop.status && prop.status.name === f.status.equals; }
           if (f.relation) {
@@ -229,17 +235,39 @@ export function makeWorld() {
           }
           throw new Error('filtre non géré par le simulateur : ' + JSON.stringify(f));
         };
-        const live = w.machinePages.filter((p) => !p.archived && norm(p.parent.database_id) === RDB && match(p, body.filter));
+        const live = w.machinePages.filter((p) => !p.archived && norm(p.parent.database_id) === RDB && (!body.filter || match(p, body.filter)));
         const start = Number((body && body.start_cursor) || 0);
         const more = start + 100 < live.length;
         return res(200, { results: live.slice(start, start + 100), has_more: more, next_cursor: more ? String(start + 100) : null });
       }
+      if (p0 === '/comments') {
+        if (w.noComments) return err(403, 'Insufficient permissions for this endpoint.');
+        if (method === 'GET') {
+          const bid = norm(new URLSearchParams(qs).get('block_id'));
+          return res(200, { results: w.comments.filter((c) => norm(c.parent.page_id) === bid), has_more: false, next_cursor: null });
+        }
+        if (method === 'POST') {
+          assert.ok(body.parent && body.parent.page_id && Array.isArray(body.rich_text));
+          body.rich_text.forEach((t) => assert.ok(t.text.content.length <= 2000));
+          const c = { id: w.id(), parent: { page_id: body.parent.page_id }, created_time: new Date(w.now).toISOString(), created_by: { id: 'bot' }, rich_text: body.rich_text.map((t) => ({ ...t, plain_text: t.text.content })) };
+          w.comments.push(c);
+          return res(200, c);
+        }
+      }
+      m = p0.match(/^\/users\/([^/]+)$/);
+      if (m && method === 'GET') return res(200, { id: m[1], name: (w.users || {})[m[1]] || null });
       m = p0.match(/^\/pages\/([^/]+)$/);
       if (m && method === 'PATCH') {
         const page = [...w.methodPages, ...w.machinePages].find((p) => norm(p.id) === norm(m[1]));
         if (!page) return err(404, 'Could not find page');
         Object.entries(body.properties || {}).forEach(([k, v]) => {
           if (!page.properties[k]) return;
+          if (v.select || v.status) {
+            const t = page.properties[k].type;
+            assert.ok(v[t], 'type de colonne attendu : ' + t);
+            if (w.failState) throw new Error('écriture d’état inattendue');
+            page.properties[k] = { type: t, [t]: { name: v[t].name } };
+          }
           if (v.rich_text) {
             v.rich_text.forEach((t) => assert.ok(t.text.content.length <= 2000, 'rich_text : 2000 caractères maximum'));
             page.properties[k] = { type: 'rich_text', rich_text: v.rich_text.map((t) => ({ ...t, plain_text: t.text.content })) };

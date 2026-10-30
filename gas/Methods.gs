@@ -537,6 +537,7 @@ function appendToTextProp_(pageId, propName, block, opts) {
     }
     const props = {};
     props[propName] = { rich_text: richChunks_(text) };
+    if (opts.extra) Object.assign(props, opts.extra(page));      // autres colonnes à écrire dans la même requête
     notion_('PATCH', '/pages/' + pageId, { properties: props });
     if (dedupeKey) cache.put(dedupeKey, '1', SYNC_CACHE_SECONDS);
     return { duplicate: false, text: text, page: page };

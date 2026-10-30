@@ -96,7 +96,6 @@ watch(online, (on) => { if (on) load() })
     <section v-if="machine.keybox" class="card block" aria-labelledby="mv-key">
       <h3 id="mv-key" class="block__title">Code boîte à clés</h3>
       <p class="code">{{ machine.keybox }}</p>
-      <CopyButton :value="machine.keybox" />
     </section>
 
     <section v-if="machine.wifi" class="card block" aria-labelledby="mv-wifi">
@@ -167,7 +166,7 @@ watch(online, (on) => { if (on) load() })
 .block__title { margin: 0 0 var(--s-2); }
 .addr { margin: 0 0 var(--s-3); font-size: 1.1em; font-weight: 600; overflow-wrap: anywhere; }
 .actions { display: flex; flex-wrap: wrap; gap: var(--s-3); }
-.code { margin: 0 0 var(--s-3); font: 700 40px/1.1 var(--f-display); letter-spacing: 0.06em; color: var(--heading); overflow-wrap: anywhere; }
+.code { margin: 0; font: 700 40px/1.1 var(--f-display); letter-spacing: 0.06em; color: var(--heading); overflow-wrap: anywhere; }
 .code--s { font-size: 24px; margin: 0; letter-spacing: 0.02em; }
 .kv { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); padding: var(--s-2) 0; border-top: 1px solid var(--line); }
 .kv > div { min-width: 0; }

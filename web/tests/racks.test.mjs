@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { makeWorld, run, api as gasApi } from '../../gas/tests/fake-notion.mjs'
 import { createStore } from '../src/db.js'
 import { createOutbox } from '../src/lib/outbox.js'
-import { createRacksService, splitByKind, filterSites, overlayPending, diagTone, needsDiagnosis } from '../src/lib/racks.js'
+import { createRacksService, splitByKind, filterSites, overlayPending, diagTone, needsDiagnosis, searchLocal } from '../src/lib/racks.js'
 class ApiError extends Error { constructor(code, message) { super(message); this.code = code } }
 
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -20,12 +20,15 @@ function setup() {
   const w = makeWorld()
   SRC.forEach((s) => run(w.ctx, s))
   const { get, post } = gasApi(w)
+  const supPost = gasApi(w, 'support').post
   const unwrap = (r) => { if (!r.ok) throw new ApiError(r.error.code, r.error.message); return r.data }
   const state = { online: true, loseNextResponse: false, down: false }
   const guard = (fn) => (...a) => { if (state.down) throw new ApiError('NETWORK', 'Pas de réseau.'); return fn(...a) }
   const api = {
     racksOverview: guard(({ sinceRev } = {}) => unwrap(get({ action: 'racksOverview', sinceRev: sinceRev || '' }))),
-    racks: guard(({ site, sinceRev }) => unwrap(get({ action: 'racks', site, sinceRev: sinceRev || '' }))),
+    racks: guard(({ site, all, sinceRev }) => unwrap(get({ action: 'racks', site, all: all ? '1' : '', sinceRev: sinceRev || '' }))),
+    racksSearch: guard((c) => unwrap(get({ action: 'racksSearch', q: c.q || '', site: c.site || '', state: c.state || '', kind: c.kind || '' }))),
+    rackSetState: guard((p) => unwrap(supPost({ action: 'rackSetState', ...p }))),
     rackDiagnosis: guard((p) => { const r = unwrap(post({ action: 'rackDiagnosis', ...p })); if (state.loseNextResponse) { state.loseNextResponse = false; throw new ApiError('NETWORK', 'réponse perdue') } return r }),
     methodComment: guard((p) => unwrap(post({ action: 'methodComment', ...p })))
   }
@@ -34,8 +37,8 @@ function setup() {
   const done = []
   const outbox = createOutbox({
     store, isOnline: () => state.online,
-    senders: { rack_diag: api.rackDiagnosis, method_comment: api.methodComment },
-    onDone: async (entry, result) => { done.push(entry.kind); if (entry.kind === 'rack_diag') await racks.applyDiagnosis(entry.payload.pageId, result) }
+    senders: { rack_diag: api.rackDiagnosis, method_comment: api.methodComment, rack_state: api.rackSetState },
+    onDone: async (entry, result) => { done.push(entry.kind); if (entry.kind === 'rack_diag') await racks.applyDiagnosis(entry.payload.pageId, result); if (entry.kind === 'rack_state') await racks.applyState(entry.payload.pageId, result) }
   })
   return { w, state, store, racks, outbox, done }
 }
@@ -135,4 +138,67 @@ test('aides : séparation casiers / racks, recherche de sites, tons des diagnost
   assert.deepEqual(filterSites([{ title: 'Dropper Lyon' }, { title: 'Épinay' }], 'epi').map((x) => x.title), ['Épinay'])
   const states = [{ id: 'repaired', label: 'Réparé' }, { id: 'unrepairable', label: 'Non réparable' }, { id: 'watch', label: 'À surveiller' }]
   assert.deepEqual(['Réparé', 'Non réparable', 'À surveiller', '?'].map((l) => diagTone(l, states)), ['done', 'danger', 'info', 'info'])
+})
+
+test('tous les états : copie locale à part, états gardés ; un diagnostic fait passer KO → Diag tech dans les deux copies', async () => {
+  const { w, racks, outbox } = setup(); const { site, c1 } = seed(w)
+  w.addRack({ title: 'Casier 45', site: site.id, state: 'Remis' })
+  w.stateOptions = ['KO', 'Diag tech', 'Remis', 'Dead']
+  const ko = await racks.loadSite(site.nid)
+  const all = await racks.loadSite(site.nid, { all: true })
+  assert.equal(ko.data.items.length, 3); assert.equal(all.data.items.length, 4)
+  assert.deepEqual(all.data.stateOptions, ['KO', 'Diag tech', 'Remis', 'Dead'])
+  assert.equal(all.data.items.find((i) => i.title === 'Casier 45').state, 'Remis')
+
+  await outbox.add('rack_diag', diag(c1.nid, { state: 'watch' })); await outbox.flush()
+  for (const k of [site.nid, site.nid + ':all']) {
+    const rec = await racks.loadSite(site.nid, { all: k.endsWith(':all') })
+    assert.equal(rec.data.items.find((i) => i.id === c1.nid).state, 'Diag tech')
+  }
+})
+
+test('support : changement d’état envoyé par la file ; copies locales mises à jour', async () => {
+  const { w, racks, outbox, state } = setup(); const { site, c1 } = seed(w)
+  w.stateOptions = ['KO', 'Diag tech', 'Remis', 'Dead']
+  await racks.loadSite(site.nid, { all: true })
+  await outbox.add('rack_state', { pageId: c1.nid, state: 'Remis', name: 'Léa Dupont' })
+  state.down = true
+  assert.equal((await outbox.flush()).sent, 0)
+  state.down = false
+  assert.equal((await outbox.flush()).sent, 1)
+  assert.equal(c1.page.properties['État'].select.name, 'Remis')
+  assert.equal((await racks.loadSite(site.nid, { all: true })).data.items.find((i) => i.id === c1.nid).state, 'Remis')
+})
+
+test('superposition : diagnostic en attente → « Diag tech » ; changement d’état en attente → nouvel état', () => {
+  const items = [{ id: 'a', title: 'Casier 1', kind: 'casier', state: 'KO' }, { id: 'b', title: 'Casier 2', kind: 'casier', state: 'Diag tech' }, { id: 'c', title: 'Casier 3', kind: 'casier', state: 'Remis' }]
+  const meta = { koStates: ['KO', 'Diag tech'], diagState: 'Diag tech' }
+  const entries = [
+    { id: 1, kind: 'rack_diag', status: 'pending', createdAt: 1, payload: { pageId: 'a', state: 'watch', name: 'K' } },
+    { id: 2, kind: 'rack_diag', status: 'pending', createdAt: 1, payload: { pageId: 'c', state: 'watch', name: 'K' } },
+    { id: 3, kind: 'rack_state', status: 'pending', createdAt: 2, payload: { pageId: 'b', state: 'Remis', name: 'L' } }
+  ]
+  const out = overlayPending(items, entries, [{ id: 'watch', label: 'À surveiller' }], (ts) => 't' + ts, meta)
+  assert.equal(out[0].state, 'Diag tech'); assert.equal(out[0].pending, 'pending')
+  assert.equal(out[1].state, 'Remis'); assert.equal(out[1].statePending, 'pending')
+  assert.equal(out[2].state, 'Remis', 'un élément déjà remis garde son état')
+})
+
+test('recherche : serveur en ligne ; copies locales hors ligne (sites déjà ouverts seulement)', async () => {
+  const { w, racks, state } = setup(); const { site } = seed(w)
+  const other = w.addMachine({ props: { Dropper: { type: 'title', title: t('Dropper Lyon') } } })
+  w.addRack({ title: 'Rack 14', site: other.id })
+  const on = await racks.search({ q: '14' })
+  assert.equal(on.offline, false)
+  assert.deepEqual(on.items.map((i) => i.title), ['Casier 14-2', 'Rack 14', 'Rack 1141'])
+  assert.equal(on.items[1].siteTitle, 'Dropper Lyon')
+
+  await racks.loadSite(site.nid)                      // seul Ordener est sur l'appareil
+  state.online = false
+  const off = await racks.search({ q: '14' })
+  assert.equal(off.offline, true)
+  assert.deepEqual(off.items.map((i) => i.title), ['Casier 14-2', 'Rack 1141'])
+  assert.deepEqual((await racks.search({ q: '14', kind: 'rack' })).items.map((i) => i.title), ['Rack 1141'])
+  assert.equal((await racks.search({ q: '14', site: 'inconnu' })).items.length, 0)
+  assert.equal(searchLocal([], { q: 'x' }).length, 0)
 })

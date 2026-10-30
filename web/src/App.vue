@@ -64,6 +64,9 @@ watch(loggedIn, (now) => {
           <BrandWordmark class="top__word" :height="20" />
         </router-link>
         <span class="app-name">{{ title }}</span>
+        <router-link :to="{ name: 'rack-search' }" class="top__search" aria-label="Rechercher un rack ou un casier" title="Rechercher un rack ou un casier">
+          <NavIcon name="search" :size="26" />
+        </router-link>
       </header>
 
       <div v-if="!online" class="banner banner--offline" role="status">
@@ -108,6 +111,8 @@ watch(loggedIn, (now) => {
   min-height: 60px;
 }
 .top__menu { display: grid; place-items: center; width: 48px; height: 48px; flex: none; border: 0; border-radius: var(--radius); background: transparent; color: inherit; cursor: pointer; }
+.top__search { display: grid; place-items: center; width: 48px; height: 48px; flex: none; border-radius: var(--radius); color: inherit; text-decoration: none; }
+.top__search:hover { background: rgba(255, 255, 255, .12); }
 .top__menu:hover { background: rgba(255, 255, 255, .12); }
 .top :focus-visible { box-shadow: 0 0 0 3px var(--c-navy), 0 0 0 6px var(--c-white); }
 .brand-link { display: flex; align-items: center; gap: var(--s-3); color: inherit; text-decoration: none; border-radius: var(--radius); }

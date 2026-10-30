@@ -8,7 +8,8 @@ import ThemeSwitch from '../components/ThemeSwitch.vue'
 import { textSize, setTextSize, TEXT_SIZES, TEXT_LABELS } from '../lib/theme.js'
 import { roleLabel, sessionDaysLeft, sessionExpired, logout, engine } from '../lib/session.js'
 import { online } from '../lib/online.js'
-import { formatDateTime } from '../lib/format.js'
+import { formatDateTime, missionStatus } from '../lib/format.js'
+import { removeMission, removeSentMissions, CATALOGS } from '../lib/localData.js'
 
 const missions = ref([])
 onMounted(() => {
@@ -30,6 +31,24 @@ async function sendAll() {
   } finally {
     sending.value = false
   }
+}
+
+const cleanMsg = ref('')
+async function removeOne(m) {
+  cleanMsg.value = ''
+  if (await removeMission(m)) { cleanMsg.value = `Fiche ${m.reference} retirée.`; estimate() }
+}
+async function removeSent() {
+  const n = await removeSentMissions()
+  cleanMsg.value = n ? `${n} fiche(s) retirée(s) de l'appareil.` : 'Aucune fiche à retirer.'
+  estimate()
+}
+async function clearCatalog(key) {
+  const c = CATALOGS[key]
+  if (!window.confirm(`Supprimer de cet appareil les données « ${c.label} » téléchargées ? Elles seront retéléchargées à la prochaine ouverture avec du réseau. Vos CR ne sont pas touchés.`)) return
+  await c.clear()
+  cleanMsg.value = `Données « ${c.label} » supprimées.`
+  estimate()
 }
 
 const storage = ref('')
@@ -89,6 +108,28 @@ async function estimate() {
       {{ missions.length }} fiche{{ missions.length > 1 ? 's' : '' }} conservée{{ missions.length > 1 ? 's' : '' }} hors ligne.
       <template v-if="persisted === false"> Sur iPhone, ajoutez l'application à l'écran d'accueil pour éviter que Safari ne purge les données.</template>
     </p>
+    <p v-if="cleanMsg" class="small" role="status">{{ cleanMsg }}</p>
+
+    <h4 class="sub">Fiches d'intervention</h4>
+    <p v-if="!missions.length" class="small muted">Aucune fiche sur cet appareil.</p>
+    <ul v-else class="loc">
+      <li v-for="m in missions" :key="m.id" class="loc__row">
+        <span class="loc__main">
+          <strong>{{ m.reference }}</strong>
+          <span class="small muted">{{ m.title }}</span>
+          <span class="chip" :class="'chip--' + missionStatus(m).tone">{{ missionStatus(m).label }}</span>
+        </span>
+        <button type="button" class="btn btn--ghost" @click="removeOne(m)">Supprimer</button>
+      </li>
+    </ul>
+    <button v-if="missions.length" type="button" class="btn btn--ghost" @click="removeSent">Retirer toutes les fiches déjà envoyées</button>
+    <p class="small muted">Les fiches avec des saisies pas encore envoyées demandent une confirmation avant suppression.</p>
+
+    <h4 class="sub">Données téléchargées</h4>
+    <p class="small muted">Méthodes, machines, racks : copies gardées pour travailler sans réseau.</p>
+    <div class="loc__btns">
+      <button v-for="(c, key) in CATALOGS" :key="key" type="button" class="btn btn--ghost" @click="clearCatalog(key)">Supprimer : {{ c.label }}</button>
+    </div>
   </section>
 </template>
 
@@ -96,6 +137,10 @@ async function estimate() {
 .block { margin-bottom: var(--s-4); display: grid; gap: var(--s-3); justify-items: start; }
 .block > * { margin: 0; }
 .block h3 { margin: 0; }
+.loc { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-2); width: 100%; }
+.loc__row { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); padding: var(--s-2) var(--s-3); border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-2); }
+.loc__main { display: grid; min-width: 0; gap: 2px; justify-items: start; }
+.loc__btns { display: flex; flex-wrap: wrap; gap: var(--s-2); }
 .sub { font-size: 22px; margin: var(--s-2) 0 0; }
 .seg { display: inline-flex; border: 2px solid var(--line-strong); border-radius: var(--radius); overflow: hidden; flex-wrap: wrap; }
 .seg__btn { min-height: var(--tap); padding: 0 var(--s-4); border: 0; background: transparent; color: var(--accent); font: 700 var(--fs-cta)/1 var(--f-display); letter-spacing: .02em; text-transform: uppercase; cursor: pointer; }

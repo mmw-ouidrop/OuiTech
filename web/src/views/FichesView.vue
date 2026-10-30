@@ -8,6 +8,7 @@ import { normalizeReference } from '../lib/ref.js'
 import { formatDateTime, missionStatus } from '../lib/format.js'
 import { online } from '../lib/online.js'
 import { DEFAULT_PREFIX } from '../config.js'
+import { removeMission } from '../lib/localData.js'
 
 const router = useRouter()
 const input = ref('')
@@ -21,6 +22,12 @@ onMounted(() => {
   sub = liveQuery(listInterventions).subscribe({ next: (rows) => (missions.value = rows) })
 })
 onUnmounted(() => sub && sub.unsubscribe())
+
+const removed = ref('')
+async function remove(m) {
+  removed.value = ''
+  if (await removeMission(m)) removed.value = `Fiche ${m.reference} retirée de cet appareil.`
+}
 
 async function open() {
   error.value = ''
@@ -73,8 +80,9 @@ async function open() {
 
   <section v-if="missions.length" aria-labelledby="local-title" style="margin-top: var(--s-6)">
     <h3 id="local-title">Sur cet appareil</h3>
+    <p v-if="removed" class="note small" role="status">{{ removed }}</p>
     <ul class="list">
-      <li v-for="m in missions" :key="m.id">
+      <li v-for="m in missions" :key="m.id" class="item">
         <router-link :to="{ name: 'mission', params: { reference: m.reference } }" class="row">
           <span class="row__main">
             <span class="row__ref">{{ m.reference }}</span>
@@ -83,12 +91,21 @@ async function open() {
           </span>
           <span class="chip" :class="'chip--' + missionStatus(m).tone">{{ missionStatus(m).label }}</span>
         </router-link>
+        <button type="button" class="del" :aria-label="'Supprimer la fiche ' + m.reference + ' de cet appareil'" :title="'Supprimer de cet appareil'" @click="remove(m)">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3" />
+          </svg>
+        </button>
       </li>
     </ul>
   </section>
 </template>
 
 <style scoped>
+.item { display: flex; gap: var(--s-2); align-items: stretch; }
+.item .row { flex: 1 1 auto; min-width: 0; }
+.del { flex: none; width: var(--tap); border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--accent); cursor: pointer; display: grid; place-items: center; }
+.del:hover, .del:focus-visible { border-color: var(--danger); }
 .list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-3); }
 .row {
   display: flex; align-items: center; justify-content: space-between; gap: var(--s-3);
