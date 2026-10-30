@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { makeWorld, run, phone, PAGE } from './fake-notion.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const md = fs.readFileSync(path.join(here, '..', '..', 'docs', 'template-exemple.md'), 'utf8');
+const md = fs.readFileSync(path.join(here, '..', '..', 'docs', 'templates', 'template-exemple.md'), 'utf8');
 const SRC = ['Code.gs', 'Report.gs', 'Auth.gs'].map((f) => fs.readFileSync(path.join(here, '..', f), 'utf8'));
 
 function toBlocks(markdown, rt) {
@@ -35,12 +35,12 @@ function toBlocks(markdown, rt) {
   return out;
 }
 
-function load() {
+function load(markdown = md) {
   const w = makeWorld();
   SRC.forEach((s) => run(w.ctx, s));
   // remplace le template de base par l'exemple
   w.childrenOf(PAGE).forEach((b) => { b.archived = true; });
-  w.seedChildren(PAGE, toBlocks(md, w.rt));
+  w.seedChildren(PAGE, toBlocks(markdown, w.rt));
   return w;
 }
 
@@ -84,4 +84,25 @@ test('l’exemple se synchronise : rapport complet, champs dans l’ordre du tem
   const cp = w.visibleReport().find((b) => w.text(b) === 'Client présent en fin d\'intervention');
   assert.equal(cp.type, 'to_do'); assert.equal(cp.to_do.checked, true, 'un champ checkbox JSON devient une case cochée');
   assert.ok(txt.indexOf('Avant d\'intervenir') < txt.indexOf('Intervention') && txt.indexOf('Intervention') < txt.indexOf('Clôture'));
+});
+
+// Template « Préventive machine 2.0 » (docs/templates/template-preventive-machine.md).
+test('template préventive machine : aucun avertissement, ids uniques, options et libellés dans les limites, synchronisable', () => {
+  const prev = fs.readFileSync(path.join(here, '..', '..', 'docs', 'templates', 'template-preventive-machine.md'), 'utf8');
+  const w = load(prev); const a = phone(w, 'Karim Benali', 'cA');
+  const r = a.load();
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.deepEqual(r.data.warnings, []);
+  const comps = r.data.templateBlocks.filter((b) => b.kind === 'component');
+  assert.equal(new Set(comps.map((c) => c.id)).size, comps.length);
+  assert.ok(comps.length > 70, comps.length + ' champs');
+  comps.forEach((c) => {
+    assert.ok(c.label.length <= 200, c.id);
+    (c.options || []).forEach((o) => assert.ok(o.length <= 80, c.id + ' : ' + o));
+  });
+  assert.ok(r.data.templateBlocks.filter((b) => b.kind === 'section').length >= 11);
+  assert.equal(r.data.templateBlocks.filter((b) => b.kind === 'invalid').length, 0);
+  const sync = a.sync({ fields: { site: { v: 'Dropper Ordener', at: a.at() }, test_aru: { v: 'Les 4 sont fonctionnels', at: a.at() } } });
+  assert.equal(sync.ok, true, JSON.stringify(sync));
+  assert.equal(sync.data.applied.fields, 2);
 });

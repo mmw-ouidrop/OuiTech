@@ -49,7 +49,7 @@ Flux : **PWA ⇄ Google Apps Script ⇄ Notion**, avec Drive comme zone de trans
    Puis **`testNotionFileUpload`** (API d'envoi de fichiers), **`testNotionCapabilities`** (insertion à une
    position, mise à jour en place, bloc de données de 2000+ caractères : **à faire avant tout usage réel**,
    c'est la seule vérification contre le vrai Notion), **`testTemplate`** (lit une fiche, liste les champs
-   trouvés et signale les erreurs du template : voir `docs/`) et **`testGetIntervention`** (contenu complet lu).
+   trouvés et signale les erreurs du template : voir `docs/templates/`) et **`testGetIntervention`** (contenu complet lu).
 5. Déployer ▸ Nouveau déploiement ▸ Application Web — *Exécuter en tant que : Moi*,
    *Accès : Tout le monde*. Copier l'URL `/exec`.
    Après chaque modification du code : *Gérer les déploiements ▸ Modifier ▸ Nouvelle version*.
@@ -238,7 +238,8 @@ commence par « Template » (ex. *Template formulaire d'intervention*). Repliez-
 rapport du technicien juste en dessous. Le titre du toggle n'apparaît pas dans le formulaire ; son contenu est lu normalement
 (profondeur maximale : 2 niveaux de toggles imbriqués).
 
-`docs/template-exemple.md` : template complet à coller dans une page Notion (il passe dans le test
+Tous les modèles Notion sont dans `docs/` (index : `docs/README.md`), dont `docs/templates/template-preventive-machine.md` (CR de préventive machine).
+`docs/templates/template-exemple.md` : template complet à coller dans une page Notion (il passe dans le test
 `gas/tests/template-example.test.mjs`). Le mémo de référence (blocs reconnus, types de champs, règles, dépannage)
 est le document « Mémo — Créer un template de CR dans Notion ».
 
