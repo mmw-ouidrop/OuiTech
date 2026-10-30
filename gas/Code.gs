@@ -44,7 +44,7 @@
  *    Auth.gs         connexion par mot de passe (2 niveaux), sessions signées
  *    Methods.gs      fiches méthodes (lecture seule) : liste, fiche, médias
  *    Machines.gs     liste des machines (lecture seule) : liste, fiche, photos
- *    Racks.gs        racks et casiers KO : vue d'ensemble, liste par site, diagnostic du technicien
+ *    Racks Casiers.gs        racks et casiers KO : vue d'ensemble, liste par site, diagnostic du technicien
  *    appsscript.json manifeste
  *
  *  ROUTES
@@ -57,8 +57,8 @@
  *           → { unchanged:true } ou l'état du rapport (relève des collègues)
  *    GET  ?action=methods | method | methodMedia   → fiches méthodes (voir Methods.gs)
  *    GET  ?action=machines | machine | machineMedia → liste des machines (voir Machines.gs)
- *    GET  ?action=racksOverview | racks&site=<pageId>  → racks et casiers KO (voir Racks.gs)
- *    POST { action:"methodComment" | "rackDiagnosis", … } → commentaire de méthode / diagnostic (voir Methods.gs, Racks.gs)
+ *    GET  ?action=racksOverview | racks&site=<pageId>  → racks et casiers KO (voir Racks Casiers.gs)
+ *    POST { action:"methodComment" | "rackDiagnosis", … } → commentaire de méthode / diagnostic (voir Methods.gs, Racks Casiers.gs)
  *    POST { action:"uploadMedia", session, fileData, fileName, mimeType,
  *           mediaId?, reference? }                 → { fileId, ... }
  *    POST { action:"syncReport", … }               → voir Report.gs

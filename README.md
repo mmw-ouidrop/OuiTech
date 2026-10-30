@@ -24,7 +24,7 @@ Flux : **PWA ⇄ Google Apps Script ⇄ Notion**, avec Drive comme zone de trans
 1. Drive : créer le dossier racine des photos (aucun partage nécessaire) → copier son ID (fin de l'URL).
 2. script.google.com ▸ nouveau projet avec **six fichiers** : coller `gas/Code.gs` (fichier `Code`),
    `gas/Report.gs` (fichier `Report`), `gas/Auth.gs` (fichier `Auth`), `gas/Methods.gs` (fichier `Methods`),
-   `gas/Machines.gs` (fichier `Machines`) et `gas/Racks.gs` (fichier `Racks`). Afficher le manifeste
+   `gas/Machines.gs` (fichier `Machines`) et `gas/Racks Casiers.gs` (fichier `Racks`). Afficher le manifeste
    (Paramètres du projet ▸ « Afficher le fichier appsscript.json ») et y coller `gas/appsscript.json`.
    Le contrat d'API (requêtes, fusion, codes d'erreur) est dans `gas/API.md`.
 3. Paramètres du projet ▸ **Propriétés du script** :

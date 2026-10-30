@@ -1,6 +1,6 @@
 /**
  * ============================================================================
- *  Racks.gs — Racks et casiers KO (base Notion « Casiers et Racks KO CZ »)
+ *  Racks Casiers.gs — Racks et casiers KO (base Notion « Casiers et Racks KO CZ »)
  * ============================================================================
  *
  *  Le technicien choisit un site, voit ses racks et casiers KO, et note son diagnostic. Le diagnostic va dans une colonne

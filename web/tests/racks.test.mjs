@@ -1,4 +1,4 @@
-// Racks et casiers KO + file d'envois hors ligne, branchés sur le VRAI code serveur (gas/Racks.gs + Methods.gs, Notion simulé).
+// Racks et casiers KO + file d'envois hors ligne, branchés sur le VRAI code serveur (gas/Racks Casiers.gs + Methods.gs, Notion simulé).
 import 'fake-indexeddb/auto'
 import test from 'node:test'
 import fs from 'node:fs'
@@ -12,7 +12,7 @@ import { createRacksService, splitByKind, filterSites, overlayPending, diagTone,
 class ApiError extends Error { constructor(code, message) { super(message); this.code = code } }
 
 const here = path.dirname(fileURLToPath(import.meta.url))
-const SRC = ['Code.gs', 'Report.gs', 'Auth.gs', 'Methods.gs', 'Machines.gs', 'Racks.gs'].map((f) => fs.readFileSync(path.join(here, '../../gas', f), 'utf8'))
+const SRC = ['Code.gs', 'Report.gs', 'Auth.gs', 'Methods.gs', 'Machines.gs', 'Racks Casiers.gs'].map((f) => fs.readFileSync(path.join(here, '../../gas', f), 'utf8'))
 let seq = 0
 const t = (s) => [{ plain_text: s }]
 
