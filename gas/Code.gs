@@ -107,11 +107,11 @@ const TEMP_RETENTION_DAYS = 14;                  // purge des fichiers de transi
 
 // Colonnes Notion à ne pas exposer à la PWA (noms exacts). Valeur par défaut ;
 // la propriété de script HIDDEN_PROPERTIES (noms séparés par « | ») la remplace.
-const HIDDEN_PROPERTIES = [];
+const HIDDEN_PROPERTIES = ["Créé au PIC|🗓️ Planification Interventions|Mise en service le|Email technicien|Temps total (en minutes)|Missions (OLD)|Action OLD|Photos d'inter 2|Créateur|État|Heure d’envoi"];
 // Colonnes à afficher en premier, dans cet ordre. L'API Notion ne documente aucun
 // ordre pour les propriétés d'une page : on le fixe ici (ou par la propriété de
 // script PROPERTY_ORDER, noms séparés par « | »). Les colonnes non citées suivent.
-const PROPERTY_ORDER = [];
+const PROPERTY_ORDER = ["Technicien|Support technique|Date d’intervention|ID|Statut|Dropper|N° de machine|Format Dropper|Adresse machine|Code boite à clé|Accès wifi|Pièces maintenance|Type d’intervention|Contexte|Possibilité de bloquer ?|Autres informations|Matériel / outillage à prévoir|Infos complémentaires|Heure de début|Heure de fin|Compte rendu|Pièces changées par machine|PDF Ouifixit"];
 
 // Types de champs que le formulaire sait afficher (voir le mémo de templates).
 const COMPONENT_TYPES = ['text', 'textarea', 'number', 'checkbox', 'radio_group',
