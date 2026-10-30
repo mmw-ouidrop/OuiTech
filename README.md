@@ -209,7 +209,7 @@ nommée « Commentaire technicien »** (autre nom : `RACKS_PROP_COMMENT`). Sans 
   *Aller à…*. Ces réglages sont propres à l'appareil et à la mission.
 - **Thème** : Auto / Clair / Sombre (*Réglages*). Auto suit le téléphone.
 
-### Données locales (IndexedDB, schéma v5)
+### Données locales (IndexedDB, schéma v6)
 
 Une fiche locale contient les saisies (`fields`, avec heure et auteur, marquées `dirty` tant que le serveur ne les a pas
 acquittées), les champs ajoutés, les demandes de suppression, le dernier état partagé du serveur, la demande de
@@ -242,6 +242,11 @@ Tous les modèles Notion sont dans `docs/` (index : `docs/README.md`), dont `doc
 `docs/templates/template-exemple.md` : template complet à coller dans une page Notion (il passe dans le test
 `gas/tests/template-example.test.mjs`). Le mémo de référence (blocs reconnus, types de champs, règles, dépannage)
 est le document « Mémo — Créer un template de CR dans Notion ».
+
+**Images, vidéos, PDF et HTML dans la page** : tout ce que vous posez dans le contenu de la page (dans le toggle « Template … » ou à côté) est affiché
+dans le formulaire : images, vidéos, PDF et fichiers importés (gardés sur l'appareil à l'ouverture de la mission, donc lisibles hors ligne), liens,
+et blocs de code **HTML** dans un cadre isolé. Détails et limites : `docs/templates/structure-page-mission.md`. Dans Réglages ▸ Stockage, ces copies
+se suppriment avec « Images et fichiers des missions ».
 
 ### Publication sur GitHub Pages
 

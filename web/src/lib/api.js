@@ -95,6 +95,9 @@ export const api = {
   // Image / fichier d'une fiche : { name, mime, size, data } | { …, tooLarge:true, url } | (mode 'url') { name, url }
   methodMedia: ({ page, key, mode }) => get({ action: 'methodMedia', page, key, mode: mode || 'data' }, 60000),
 
+  // Image / fichier posé dans le contenu d'une page de mission (même réponse que methodMedia).
+  missionMedia: ({ page, key, mode }) => get({ action: 'missionMedia', page, key, mode: mode || 'data' }, 60000),
+
   // Liste des machines (lecture seule), même principe.
   machines: ({ sinceRev } = {}) => get({ action: 'machines', sinceRev: sinceRev || '' }, 45000),
   machine: ({ id, sinceEdited }) => get({ action: 'machine', id, sinceEdited: sinceEdited || '' }, 45000),

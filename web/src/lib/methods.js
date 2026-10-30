@@ -278,3 +278,53 @@ export function createMachinesService({ store, api, isOnline = () => true }) {
     prefetchAll: svc.prefetchAll
   }
 }
+
+// Médias seuls (sans liste ni fiche) : images et fichiers posés dans le contenu d'une page de mission.
+// Même contrat que les catalogues pour getMedia / getFreshUrl, donc utilisable par MethodImage, MethodVideo et MethodFile.
+export function createMediaService({ store, api, isOnline = () => true }) {
+  async function getMedia(pageId, key) {
+    const hit = await store.getMedia(pageId, key)
+    if (hit) return { blob: hit.blob, name: hit.name, mime: hit.mime }
+    if (!isOnline()) return { error: 'OFFLINE' }
+    try {
+      const res = await api.media({ page: pageId, key })
+      if (res.tooLarge) return { tooLarge: true, url: res.url, name: res.name, size: res.size }
+      const blob = base64ToBlob(res.data, res.mime)
+      await store.saveMedia(pageId, key, { blob, mime: res.mime, name: res.name })
+      return { blob, name: res.name, mime: res.mime }
+    } catch (e) {
+      return { error: e.code || 'ERROR', message: e.message }
+    }
+  }
+
+  async function getFreshUrl(pageId, key) {
+    if (!isOnline()) return { error: 'OFFLINE' }
+    try {
+      const res = await api.media({ page: pageId, key, mode: 'url' })
+      return { url: res.url, name: res.name }
+    } catch (e) {
+      return { error: e.code || 'ERROR', message: e.message }
+    }
+  }
+
+  // Garde sur l'appareil les médias hébergés d'une mission (images et fichiers) pour les relire sans réseau.
+  async function prefetch(pageId, keys) {
+    const have = await store.listMediaKeys(pageId)
+    const out = { done: 0, failed: 0, tooLarge: 0, skipped: 0 }
+    for (const k of keys) {
+      if (have.has(k)) { out.skipped++; continue }
+      if (!isOnline()) { out.failed++; continue }
+      const r = await getMedia(pageId, k)
+      if (r.blob) out.done++
+      else if (r.tooLarge) out.tooLarge++
+      else out.failed++
+    }
+    return out
+  }
+
+  return { getMedia, getFreshUrl, prefetch }
+}
+
+// Éléments du contenu d'une mission à afficher (images, vidéos, fichiers hébergés par Notion : clé = id du bloc).
+export const hostedMediaKeys = (templateBlocks) =>
+  (templateBlocks || []).filter((b) => b.kind === 'media' && !b.url && (b.type === 'image' || b.type === 'file' || b.type === 'pdf')).map((b) => b.blockId)

@@ -121,6 +121,7 @@ const COMPONENT_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const RESERVED_ID_RE = /^(u_|todo_|S:)/;
 
 const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;   // taille décodée max d'une photo
+const MAX_TEMPLATE_HTML = 100000;              // caractères max d'un bloc HTML du template
 const MAX_NEST_DEPTH = 2;                    // profondeur de lecture des toggles
 const NOTION_MAX_CHILDREN = 100;             // limite Notion par requête append
 const NOTION_MAX_TEXT = 2000;                // limite Notion par objet rich_text
@@ -183,6 +184,8 @@ function doGet(e) {
         return ok_(getMachine_(p));
       case 'machineMedia':
         return ok_(getMachineMedia_(p));
+      case 'missionMedia':
+        return ok_(getMissionMedia_(p));
       case 'racksOverview':
         return ok_(getRacksOverview_(p));
       case 'racks':
@@ -519,6 +522,10 @@ function formatProperty_(prop) {
  *    { kind:"component", id, type, label, ...options, blockId }   (JSON Notion)
  *    { kind:"text",      style, text, blockId }        (consignes, paragraphes)
  *    { kind:"divider" }
+ *    { kind:"media",     type:"image|video|pdf|file|audio", blockId, name, caption, url? }   (url : lien externe seulement ;
+ *                         un fichier hébergé par Notion est servi par la route missionMedia)
+ *    { kind:"link",      url, text }                   (embed, marque-page)
+ *    { kind:"html",      blockId, html }               (bloc de code « HTML » : affiché tel quel, dans un cadre isolé)
  *    { kind:"invalid",   blockId, error, raw }         (JSON mal formé)
  *  Les blocs « to_do » natifs de Notion deviennent des composants "checkbox".
  *  Un bloc de code JSON peut contenir un objet OU un tableau d'objets.
@@ -584,6 +591,30 @@ function convertBlocks_(blocks, ctx, depth) {
       case 'code':
         if (data.language === 'json') {
           parseJsonComponents_(b, text, ctx);
+        } else if (data.language === 'html' && text.trim()) {
+          ctx.out.push({ kind: 'html', blockId: b.id, html: text.slice(0, MAX_TEMPLATE_HTML) });
+        }
+        break;
+
+      case 'image':
+      case 'video':
+      case 'pdf':
+      case 'file':
+      case 'audio': {
+        const ext = data.type === 'external' ? (data.external || {}).url : '';
+        const url = String(ext || '');
+        const m = { kind: 'media', type: t, blockId: b.id, name: String(data.name || ''), caption: plain_(data.caption) };
+        if (/^https:\/\//.test(url)) m.url = url;          // lien externe (YouTube, image d'un site…)
+        else if (data.type === 'external') break;            // lien non https : ignoré
+        ctx.out.push(m);
+        break;
+      }
+
+      case 'embed':
+      case 'bookmark':
+      case 'link_preview':
+        if (/^https?:\/\//.test(String(data.url || ''))) {
+          ctx.out.push({ kind: 'link', blockId: b.id, url: data.url, text: plain_(data.caption) || data.url });
         }
         break;
 
@@ -677,6 +708,18 @@ function parseJsonComponents_(block, src, ctx) {
     // `kind` et `blockId` écrasent d'éventuelles clés homonymes du JSON.
     ctx.out.push(Object.assign({}, c, { kind: 'component', blockId: block.id }));
   });
+}
+
+// Image / vidéo / PDF / fichier posé dans le contenu d'une page de mission (template ou consigne) : servi par le
+// serveur, car les liens de fichiers Notion expirent après ~1 h. Seuls les blocs de CETTE page, et seulement si
+// la page appartient à la base des interventions, sont servis. Même réponse que methodMedia.
+function getMissionMedia_(p) {
+  const pageId = plainId_(p.page);
+  if (!/^[0-9a-f]{32}$/.test(pageId)) throw new ApiError_('BAD_REQUEST', 'Identifiant de page invalide');
+  const page = notion_('GET', '/pages/' + pageId);
+  const par = page.parent || {};
+  if (plainId_(par.database_id) !== plainId_(cfg_('NOTION_DB_ID', ''))) throw new ApiError_('NOT_FOUND', 'Page introuvable');
+  return deliverMedia_(mediaSource_(page, p.key, []), p.mode);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

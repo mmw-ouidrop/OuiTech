@@ -287,7 +287,7 @@ export function makeWorld() {
         return res(200, [...w.methodPages, ...w.machinePages].find((p) => norm(p.id) === norm(m[1])));
       }
       if (method === 'GET' && p0 === `/pages/${PAGE}`) {
-        return res(200, { parent: { database_id: w.pageDb || dash(DB) }, archived: false });
+        return res(200, { id: dash(PAGE), parent: { database_id: w.pageDb || dash(DB) }, archived: false });
       }
 
       m = p0.match(/^\/blocks\/([^/]+)\/children$/);

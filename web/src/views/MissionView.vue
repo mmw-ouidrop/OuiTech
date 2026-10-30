@@ -24,6 +24,10 @@ import PropertiesPanel from '../components/PropertiesPanel.vue'
 import IdentityCard from '../components/IdentityCard.vue'
 import FieldInput from '../components/FieldInput.vue'
 import CustomFieldForm from '../components/CustomFieldForm.vue'
+import TemplateMedia from '../components/TemplateMedia.vue'
+import TemplateHtml from '../components/TemplateHtml.vue'
+import { missionMedia } from '../lib/methodsApp.js'
+import { hostedMediaKeys } from '../lib/methods.js'
 
 const props = defineProps({ reference: { type: String, required: true } })
 
@@ -89,6 +93,11 @@ async function load() {
 }
 
 watch(() => props.reference, load, { immediate: true })
+
+// Images et fichiers du contenu de la mission : gardés sur l'appareil dès qu'on a du réseau (lisibles ensuite hors ligne).
+watch(() => (mission.value && online.value ? mission.value.templateBlocks : null), (blocks) => {
+  if (blocks) missionMedia.prefetch(mission.value.id, hostedMediaKeys(blocks)).catch(() => {})
+}, { immediate: true })
 onUnmounted(teardown)
 
 // Une saisie rejoint IndexedDB : on retire l'écran temporaire correspondant.
@@ -380,6 +389,9 @@ const headingTag = (level) => 'h' + Math.min(level + 2, 5)
 
         <p v-else-if="r.k === 'text'" class="tmpl-text" :class="'tmpl-text--' + (r.item.style || 'paragraph')">{{ r.item.text }}</p>
         <hr v-else-if="r.k === 'divider'" class="tmpl-hr" />
+        <TemplateMedia v-else-if="r.k === 'media'" :page-id="mission.id" :item="r.item" />
+        <p v-else-if="r.k === 'link'" class="tmpl-text"><a :href="r.item.url" target="_blank" rel="noopener noreferrer">{{ r.item.text }}</a></p>
+        <TemplateHtml v-else-if="r.k === 'html'" :html="r.item.html" />
       </template>
     </form>
 

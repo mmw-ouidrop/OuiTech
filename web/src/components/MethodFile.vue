@@ -6,7 +6,8 @@ import { methods } from '../lib/methodsApp.js'
 const props = defineProps({
   pageId: { type: String, required: true },
   mediaKey: { type: String, required: true },
-  name: { type: String, default: 'Fichier' }
+  name: { type: String, default: 'Fichier' },
+  service: { type: Object, default: null }
 })
 const busy = ref(false)
 const message = ref('')
@@ -15,7 +16,7 @@ async function open() {
   message.value = ''
   busy.value = true
   try {
-    const r = await methods.getMedia(props.pageId, props.mediaKey)
+    const r = await (props.service || methods).getMedia(props.pageId, props.mediaKey)
     if (r.blob) {
       const url = URL.createObjectURL(r.blob)
       window.open(url, '_blank', 'noopener')

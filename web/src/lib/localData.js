@@ -1,5 +1,5 @@
 // Suppression de données locales (fiches d'intervention, copies des catalogues) : confirmations et garde-fous.
-import { deleteIntervention, methodsCatalog, machinesCatalog, clearRacksCache, listInterventions } from '../db.js'
+import { deleteIntervention, methodsCatalog, machinesCatalog, missionMediaStore, clearRacksCache, listInterventions } from '../db.js'
 
 // Supprime une fiche de l'appareil. Des saisies non envoyées ne partent qu'après confirmation explicite.
 // → true si supprimée.
@@ -24,6 +24,7 @@ export async function removeSentMissions(confirmFn = (m) => window.confirm(m)) {
 
 export const CATALOGS = {
   methods: { label: 'Méthodes', clear: () => methodsCatalog.clear(), stats: () => methodsCatalog.stats() },
+  missions: { label: 'Images et fichiers des missions', clear: () => missionMediaStore.clear(), stats: () => missionMediaStore.stats() },
   machines: { label: 'Machines', clear: () => machinesCatalog.clear(), stats: () => machinesCatalog.stats() },
   racks: { label: 'Racks et casiers KO', clear: () => clearRacksCache(), stats: null }
 }

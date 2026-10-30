@@ -63,6 +63,13 @@ photos         { [componentId]: [ { mediaId, by, at } ] }
 editors[]      autres appareils actifs : { clientId, name, agoSec }
 ```
 
+## GET `missionMedia`
+
+`?action=missionMedia&page=<pageId de la mission>&key=<id du bloc>&mode=data|url` : image / fichier posé dans le contenu d'une page de mission
+(même réponse que `methodMedia` : `{ name, mime, size, data }`, `{ …, tooLarge:true, url }` ou, en mode `url`, `{ name, url }`).
+`getIntervention` renvoie en plus, dans `templateBlocks`, des éléments `{ kind:"media", type, blockId, name, caption, url? }`, `{ kind:"link", url, text }`
+et `{ kind:"html", blockId, html }` (bloc de code HTML). Seule une page de la base des interventions est servie ; erreur `NOT_FOUND` sinon.
+
 ## POST `methodComment` / `rackDiagnosis`
 
 `{ action:"methodComment", pageId, text, name, id }` ajoute un commentaire à la colonne « Commentaires » de la fiche (→ `{ comments }`).

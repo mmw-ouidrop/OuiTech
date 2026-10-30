@@ -51,6 +51,9 @@ export function buildItems(rec) {
     else if (b.kind === 'component') items.push({ k: 'field', ...b })
     else if (b.kind === 'text') items.push({ k: 'text', id: 'T:' + b.blockId, style: b.style, text: b.text })
     else if (b.kind === 'divider') items.push({ k: 'divider', id: 'D:' + b.blockId })
+    else if (b.kind === 'media') items.push({ k: 'media', id: 'M:' + b.blockId, type: b.type, blockId: b.blockId, name: b.name, caption: b.caption, url: b.url })
+    else if (b.kind === 'link') items.push({ k: 'link', id: 'L:' + b.blockId, url: b.url, text: b.text })
+    else if (b.kind === 'html') items.push({ k: 'html', id: 'H:' + b.blockId, html: b.html })
   }
   const custom = Object.keys(rec.custom || {}).sort((a, b) => rec.custom[a].at - rec.custom[b].at || (a < b ? -1 : 1))
   if (custom.length) {

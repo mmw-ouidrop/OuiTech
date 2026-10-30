@@ -10,6 +10,7 @@ const props = defineProps({
   url: { type: String, default: '' },        // vidéo d'un service externe
   mediaKey: { type: String, default: '' },   // vidéo hébergée par Notion
   caption: { type: String, default: '' },
+  service: { type: Object, default: null },     // catalogue d'origine (méthodes par défaut)
   active: { type: Boolean, default: true }     // faux : diapositive non affichée d'un carrousel (le lecteur s'arrête)
 })
 
@@ -23,7 +24,7 @@ watch(() => props.active, (a) => { if (!a && player.value) player.value.pause() 
 async function loadFile() {
   message.value = ''
   busy.value = true
-  const r = await methods.getFreshUrl(props.pageId, props.mediaKey)
+  const r = await (props.service || methods).getFreshUrl(props.pageId, props.mediaKey)
   busy.value = false
   if (r.url) fileUrl.value = r.url
   else message.value = r.error === 'OFFLINE' ? 'Les vidéos demandent du réseau.' : 'Vidéo indisponible pour le moment.'

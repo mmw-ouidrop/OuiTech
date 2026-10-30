@@ -29,6 +29,8 @@
 //                          blob, mime, name, size, fetchedAt. Les adresses Notion expirent au bout
 //                          d'environ une heure : on ne garde jamais d'adresse, seulement le fichier.
 //
+//  Store `mission_media` — images / fichiers posés dans le contenu des pages de mission (même forme que `method_media`, schéma v6).
+//
 //  Stores `machines_index`, `machines`, `machine_media` — idem, pour la liste des machines (schéma v4).
 //
 //  Store `racks_overview` (une ligne 'overview') et `racks_sites` (une ligne par site : liste des racks/casiers KO)
@@ -126,6 +128,9 @@ export function createStore(name = 'ouidrop-interventions') {
     racks_overview: 'key',
     racks_sites: 'siteId',
     outbox: 'id, kind, createdAt'
+  })
+  db.version(6).stores({
+    mission_media: 'id, pageId'          // images / fichiers posés dans le contenu des pages de mission
   })
 
   /* ── utilitaires internes (à appeler dans une transaction) ── */
@@ -477,6 +482,21 @@ export function createStore(name = 'ouidrop-interventions') {
       }
     }
   }
+  /* ── Médias du contenu des missions (images, PDF…) : copies locales ── */
+  const missionMediaStore = {
+    getMedia: (pageId, key) => db.mission_media.get(`${pageId}|${key}`),
+    listMediaKeys: async (pageId) =>
+      new Set((await db.mission_media.where('pageId').equals(pageId).primaryKeys()).map((id) => id.slice(pageId.length + 1))),
+    saveMedia: (pageId, key, { blob, mime, name }) =>
+      db.mission_media.put({ id: `${pageId}|${key}`, pageId, blob, mime: mime || blob.type, name: name || '', size: blob.size, fetchedAt: now() }),
+    clear: () => db.mission_media.clear(),
+    stats: async () => {
+      let bytes = 0
+      await db.mission_media.each((r) => { bytes += r.size || 0 })
+      return { items: 0, media: await db.mission_media.count(), bytes }
+    }
+  }
+
   /* ── Racks et casiers KO : copies locales par site ── */
   const getRacksOverview = () => db.racks_overview.get('overview')
   const saveRacksOverview = (o) => db.racks_overview.put({ key: 'overview', rev: o.rev, total: o.total, sites: o.sites, fetchedAt: now() })
@@ -519,7 +539,7 @@ export function createStore(name = 'ouidrop-interventions') {
   return {
     getMethodsList, saveMethodsList, touchMethodsList, getMethod, listCachedMethodIds, saveMethod, touchMethod,
     getMethodMedia, listMethodMediaKeys, saveMethodMedia, clearMethodsCache, methodsCacheStats,
-    methodsCatalog: methodsCat, machinesCatalog: machinesCat,
+    methodsCatalog: methodsCat, machinesCatalog: machinesCat, missionMediaStore,
     getRacksOverview, saveRacksOverview, touchRacksOverview, getRacksSite, listRacksSites, saveRacksSite, touchRacksSite, clearRacksCache,
     outboxAdd, outboxList, outboxUpdate, outboxRemove,
     db, getIntervention, listInterventions, findByReference, listPhotos, saveMission, setFields,
@@ -535,7 +555,7 @@ const store = createStore(globalThis.__OUIDROP_DB_NAME__ || 'ouidrop-interventio
 export const {
   getMethodsList, saveMethodsList, touchMethodsList, getMethod, listCachedMethodIds, saveMethod, touchMethod,
   getMethodMedia, listMethodMediaKeys, saveMethodMedia, clearMethodsCache, methodsCacheStats,
-  methodsCatalog, machinesCatalog,
+  methodsCatalog, machinesCatalog, missionMediaStore,
   getRacksOverview, saveRacksOverview, touchRacksOverview, getRacksSite, listRacksSites, saveRacksSite, touchRacksSite, clearRacksCache,
   outboxAdd, outboxList, outboxUpdate, outboxRemove,
   db, getIntervention, listInterventions, findByReference, listPhotos, saveMission, setFields,

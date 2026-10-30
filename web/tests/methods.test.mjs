@@ -190,3 +190,46 @@ test('fiche enregistrée dans un ancien format : relue en entier même si Notion
   await service.loadMethod(m.nid)
   assert.equal(w.calls.filter((c) => /children/.test(c.path)).length, 0, 'ensuite : plus de relecture tant que Notion ne change pas')
 })
+
+import { buildSrcdoc, FRAME_CSP } from '../src/lib/htmlFrame.js'
+import { buildItems } from '../src/lib/shared.js'
+import { hostedMediaKeys, createMediaService } from '../src/lib/methods.js'
+
+test('contenu de mission : images, vidéos, fichiers, liens et HTML deviennent des éléments affichables', () => {
+  const tb = [
+    { kind: 'section', level: 1, text: 'A', blockId: 's1' },
+    { kind: 'media', type: 'image', blockId: 'i1', name: '', caption: 'Schéma' },
+    { kind: 'media', type: 'file', blockId: 'f1', name: 'Notice.pdf', caption: '' },
+    { kind: 'media', type: 'video', blockId: 'v1', url: 'https://youtu.be/x', caption: '' },
+    { kind: 'link', blockId: 'l1', url: 'https://a.fr', text: 'Doc' },
+    { kind: 'html', blockId: 'h1', html: '<b>x</b>' }
+  ]
+  const items = buildItems({ templateBlocks: tb })
+  assert.deepEqual(items.map((i) => i.k), ['section', 'media', 'media', 'media', 'link', 'html'])
+  assert.deepEqual(hostedMediaKeys(tb), ['i1', 'f1'])
+})
+
+test('bloc HTML : document isolé, sans requêtes réseau, avec le contenu intact', () => {
+  const doc = buildSrcdoc('<div id="x" style="color:red">Bonjour</div><script>window.a=1</script>')
+  assert.match(doc, /Content-Security-Policy/)
+  assert.match(FRAME_CSP, /connect-src 'none'/);  assert.match(FRAME_CSP, /form-action 'none'/); assert.match(FRAME_CSP, /default-src 'none'/)
+  assert.ok(doc.includes('<div id="x" style="color:red">Bonjour</div>'))
+  assert.ok(doc.includes('ouitech-height'))
+})
+
+test('médias de mission : copie locale, hors ligne relue, préchargement sans doublon', async () => {
+  const saved = new Map(); let calls = 0; let online = true
+  const store = {
+    getMedia: async (p, k) => saved.get(p + '|' + k),
+    saveMedia: async (p, k, v) => { saved.set(p + '|' + k, v) },
+    listMediaKeys: async (p) => new Set([...saved.keys()].filter((x) => x.startsWith(p + '|')).map((x) => x.slice(p.length + 1)))
+  }
+  const api = { media: async ({ key }) => { calls++; return { data: btoa('abc'), mime: 'image/png', name: key } } }
+  const svc = createMediaService({ store, api, isOnline: () => online })
+  assert.deepEqual(await svc.prefetch('P', ['a', 'b']), { done: 2, failed: 0, tooLarge: 0, skipped: 0 })
+  assert.deepEqual(await svc.prefetch('P', ['a', 'b', 'c']), { done: 1, failed: 0, tooLarge: 0, skipped: 2 })
+  online = false
+  assert.ok((await svc.getMedia('P', 'a')).blob)
+  assert.equal((await svc.getMedia('P', 'zz')).error, 'OFFLINE')
+  assert.equal(calls, 3)
+})
