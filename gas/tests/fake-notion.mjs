@@ -202,7 +202,8 @@ export function makeWorld() {
             Nom: { type: 'title', title: [{ plain_text: 'Remplacement compteur' }] },
             ID: { type: 'unique_id', unique_id: { prefix: 'FI', number: 252 } },
             Client: { type: 'rich_text', rich_text: [{ plain_text: 'Dupont' }] },
-            Statut: { type: 'status', status: { name: 'À faire' } }
+            Statut: { type: 'status', status: { name: 'À faire' } },
+            ...(w.pageProps || {})
           } }] });
       }
       if (method === 'POST' && p0 === `/databases/${MDB}/query`) {
@@ -287,7 +288,7 @@ export function makeWorld() {
         return res(200, [...w.methodPages, ...w.machinePages].find((p) => norm(p.id) === norm(m[1])));
       }
       if (method === 'GET' && p0 === `/pages/${PAGE}`) {
-        return res(200, { id: dash(PAGE), parent: { database_id: w.pageDb || dash(DB) }, archived: false });
+        return res(200, { id: dash(PAGE), parent: { database_id: w.pageDb || dash(DB) }, archived: false, properties: { ...(w.pageProps || {}) } });
       }
 
       m = p0.match(/^\/blocks\/([^/]+)\/children$/);

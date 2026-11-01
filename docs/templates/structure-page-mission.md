@@ -21,7 +21,7 @@ Chaque fiche d'intervention (base « Interventions ») contient, dans la zone de
 | Bloc Notion | Effet dans le formulaire |
 |---|---|
 | Titre 1 / 2 | Section |
-| Paragraphe, liste, citation | Consigne affichée |
+| Paragraphe, **liste à puces ou numérotée** (sous-listes comprises), citation, encadré | Consigne affichée **avec sa mise en forme** : gras, italique, souligné, barré, `code`, liens, couleurs de texte et de fond. Les listes s'affichent en liste, avec leurs niveaux. |
 | Case à cocher (`- [ ]`) | Champ case à cocher |
 | Bloc de code **json** (un objet ou un tableau d'objets) | Un ou plusieurs champs |
 | **Image**, **Vidéo**, **PDF**, **Fichier**, **Audio** (importés dans Notion) | Affichés dans le formulaire, gardés sur l'appareil à l'ouverture de la mission (lisibles hors ligne, jusqu'à 6 Mo ; plus gros : lien, en ligne). La légende s'affiche sous le média. |
@@ -30,7 +30,9 @@ Chaque fiche d'intervention (base « Interventions ») contient, dans la zone de
 | Bloc de code **HTML** (langage « HTML » dans Notion) | Affiché tel quel dans un cadre isolé : voir ci-dessous |
 
 Ces médias, liens et blocs HTML ne sont **pas** des champs : ils ne figurent pas dans le rapport. Ils peuvent se trouver dans le toggle « Template … »
-(2 niveaux d'imbrication lus au maximum). Les tableaux, colonnes et synchronized blocks ne sont pas affichés.
+(4 niveaux d'imbrication lus au maximum, 80 requêtes Notion par ouverture). Le contenu des colonnes est lu comme s'il était à la suite ; les tableaux et synchronized blocks ne sont pas affichés.
+
+Après une modification du contenu d'une page dans Notion, « Actualiser » sur la fiche de la mission relit le template.
 
 ## Blocs HTML personnalisés
 

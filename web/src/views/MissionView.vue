@@ -14,11 +14,11 @@ import { api } from '../lib/api.js'
 import { createAutosaver } from '../lib/autosave.js'
 import { prepareImage } from '../lib/image.js'
 import { normalizeReference } from '../lib/ref.js'
-import { missionStatus, formatDateTime, formatTime } from '../lib/format.js'
+import { missionStatus, formatDateTime, formatTime, personName } from '../lib/format.js'
 import { online } from '../lib/online.js'
 import { DEFAULT_PREFIX } from '../config.js'
 import { buildItems, effectiveStatus, fieldValue } from '../lib/shared.js'
-import { buildOutline, jumpTargets, loadViewPrefs, saveViewPrefs, setAllCollapsed, ancestorSections } from '../lib/outline.js'
+import { buildOutline, groupLists, jumpTargets, loadViewPrefs, saveViewPrefs, setAllCollapsed, ancestorSections } from '../lib/outline.js'
 import { named, displayName, watch as watchSync } from '../lib/session.js'
 import PropertiesPanel from '../components/PropertiesPanel.vue'
 import IdentityCard from '../components/IdentityCard.vue'
@@ -26,8 +26,9 @@ import FieldInput from '../components/FieldInput.vue'
 import CustomFieldForm from '../components/CustomFieldForm.vue'
 import TemplateMedia from '../components/TemplateMedia.vue'
 import TemplateHtml from '../components/TemplateHtml.vue'
+import RichText from '../components/RichText.vue'
 import { missionMedia } from '../lib/methodsApp.js'
-import { hostedMediaKeys } from '../lib/methods.js'
+import { hostedMediaKeys, propertyFileKeys } from '../lib/methods.js'
 
 const props = defineProps({ reference: { type: String, required: true } })
 
@@ -95,8 +96,11 @@ async function load() {
 watch(() => props.reference, load, { immediate: true })
 
 // Images et fichiers du contenu de la mission : gardés sur l'appareil dès qu'on a du réseau (lisibles ensuite hors ligne).
-watch(() => (mission.value && online.value ? mission.value.templateBlocks : null), (blocks) => {
-  if (blocks) missionMedia.prefetch(mission.value.id, hostedMediaKeys(blocks)).catch(() => {})
+const mediaKeys = computed(() => (mission.value && online.value
+  ? [...hostedMediaKeys(mission.value.templateBlocks), ...propertyFileKeys(mission.value.readOnlyData)]
+  : []))
+watch(() => mediaKeys.value.join('|'), () => {
+  if (mediaKeys.value.length) missionMedia.prefetch(mission.value.id, mediaKeys.value).catch(() => {})
 }, { immediate: true })
 onUnmounted(teardown)
 
@@ -137,6 +141,7 @@ const ctx = computed(() => ({
   keep: new Set([...touched, ...Object.keys((mission.value && mission.value.conflicts) || {})])
 }))
 const outline = computed(() => buildOutline(items.value, ctx.value))
+const blocks = computed(() => groupLists(outline.value.rows))
 const jump = computed(() => jumpTargets(items.value, ctx.value))
 const allCollapsed = computed(() => {
   const secs = items.value.filter((i) => i.k === 'section' && i.level <= 2)
@@ -144,7 +149,8 @@ const allCollapsed = computed(() => {
 })
 const byOther = (id) => {
   const f = mission.value && mission.value.fields[id]
-  return f && f.by && f.by !== displayName.value && !f.dirty ? f.by : ''
+  const by = f ? personName(f.by) : ''
+  return by && by !== displayName.value && !f.dirty ? by : ''
 }
 
 const last = computed(() => (mission.value && mission.value.shared && mission.value.shared.last) || null)
@@ -310,7 +316,7 @@ const headingTag = (level) => 'h' + Math.min(level + 2, 5)
           {{ saveState === 'saving' || saveState === 'dirty' ? 'Enregistrement…' : saveState === 'error' ? '' : 'Enregistré sur l’appareil' }}
         </span>
       </div>
-      <p v-if="last" class="small muted status__line">Dernière modification : {{ last.by }} · {{ formatDateTime(last.at) }}</p>
+      <p v-if="last" class="small muted status__line">Dernière modification : {{ personName(last.by) || 'auteur inconnu' }} · {{ formatDateTime(last.at) }}</p>
       <p v-if="editors.length" class="small status__line">
         {{ editors.map((e) => e.name).join(', ') }} {{ editors.length > 1 ? 'consultent' : 'consulte' }} aussi cette fiche.
       </p>
@@ -329,7 +335,7 @@ const headingTag = (level) => 'h' + Math.min(level + 2, 5)
       <p v-if="refreshMsg" class="small status__line" role="status">{{ refreshMsg }}</p>
     </section>
 
-    <PropertiesPanel :properties="mission.readOnlyData" />
+    <PropertiesPanel :properties="mission.readOnlyData" :page-id="mission.id" />
 
     <p v-if="mission.templateWarnings && mission.templateWarnings.length" class="note small gap" role="status">
       {{ mission.templateWarnings.length }} point(s) à corriger dans le template Notion :
@@ -363,7 +369,7 @@ const headingTag = (level) => 'h' + Math.min(level + 2, 5)
 
     <form class="card form" novalidate @submit.prevent>
       <p v-if="!items.length" class="muted">Ce template ne contient aucun champ.</p>
-      <template v-for="r in outline.rows" :key="r.id">
+      <template v-for="r in blocks" :key="r.id">
         <div v-if="r.k === 'section'" class="sec" :class="'sec--' + r.level" :data-section="r.id">
           <component :is="headingTag(r.level)" class="sec__h">
             <button v-if="r.collapsible" type="button" class="sec__btn" :aria-expanded="r.open" @click="toggleSection(r.id)">
@@ -387,7 +393,15 @@ const headingTag = (level) => 'h' + Math.min(level + 2, 5)
           @remove-field="onRemoveCustom(r.id)"
         />
 
-        <p v-else-if="r.k === 'text'" class="tmpl-text" :class="'tmpl-text--' + (r.item.style || 'paragraph')">{{ r.item.text }}</p>
+        <ul v-else-if="r.k === 'list'" class="tmpl-list">
+          <li v-for="li in r.rows" :key="li.id" class="tmpl-li" :style="{ '--lvl': li.item.level }">
+            <span class="tmpl-li__mark" aria-hidden="true">{{ li.item.style === 'numbered_list' ? li.item.num + '.' : li.item.level % 2 ? '◦' : '•' }}</span>
+            <span class="tmpl-li__text"><RichText :segments="li.item.rt" :text="li.item.text" /></span>
+          </li>
+        </ul>
+        <p v-else-if="r.k === 'text'" class="tmpl-text" :class="'tmpl-text--' + (r.item.style || 'paragraph')">
+          <span v-if="r.item.icon" class="tmpl-icon" aria-hidden="true">{{ r.item.icon }}</span><RichText :segments="r.item.rt" :text="r.item.text" />
+        </p>
         <hr v-else-if="r.k === 'divider'" class="tmpl-hr" />
         <TemplateMedia v-else-if="r.k === 'media'" :page-id="mission.id" :item="r.item" />
         <p v-else-if="r.k === 'link'" class="tmpl-text"><a :href="r.item.url" target="_blank" rel="noopener noreferrer">{{ r.item.text }}</a></p>
@@ -457,7 +471,12 @@ h5.sec__h { font-size: 18px; line-height: 1.2; font-weight: 600; margin-top: var
 .sec__count { flex: none; font-family: var(--f-body); font-weight: 600; padding: 2px 10px; border-radius: 999px; background: var(--surface-2); color: var(--heading); border: 1px solid var(--line); }
 .sec__count--done { background: var(--btn-bg); color: var(--btn-text); border-color: var(--btn-bg); }
 
-.tmpl-text { margin: var(--s-2) 0; color: var(--text); }
+.tmpl-text { margin: var(--s-2) 0; color: var(--text); white-space: pre-line; overflow-wrap: anywhere; }
+.tmpl-icon { margin-right: var(--s-2); }
+.tmpl-list { list-style: none; margin: var(--s-2) 0; padding: 0; }
+.tmpl-li { display: flex; gap: var(--s-2); margin: 2px 0; padding-left: calc(var(--lvl, 0) * 1.4em); color: var(--text); }
+.tmpl-li__mark { flex: none; min-width: 1.4em; text-align: right; font-weight: 600; }
+.tmpl-li__text { flex: 1 1 auto; min-width: 0; white-space: pre-line; overflow-wrap: anywhere; }
 .tmpl-text--quote, .tmpl-text--callout { border-left: 4px solid var(--ring); padding-left: var(--s-3); }
 .tmpl-hr { border: 0; border-top: 1px solid var(--line); margin: var(--s-4) 0; }
 

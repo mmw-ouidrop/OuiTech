@@ -99,10 +99,29 @@ function clip_(v, n) {
   return String(v == null ? '' : v).slice(0, n);
 }
 
+// Nom d'auteur : texte, ou objet { firstName, lastName } (ou { name }). Définition UNIQUE pour tout le projet (Methods.gs et
+// Racks Casiers.gs l'utilisent aussi) : ne jamais en créer une seconde, la dernière chargée écraserait celle-ci (« [object Object] »).
 function cleanName_(author) {
   const a = author || {};
-  const full = typeof a === 'string' ? a : String(a.firstName || '') + ' ' + String(a.lastName || '');
-  return full.replace(/\s+/g, ' ').trim().slice(0, 60);
+  let full = '';
+  if (typeof a === 'string') full = a;
+  else if (typeof a === 'object') full = String(a.firstName || '') + ' ' + String(a.lastName || '');
+  if (!full.trim() && typeof a === 'object') full = typeof a.name === 'string' ? a.name : '';
+  full = full.replace(/\s+/g, ' ').trim();
+  return full === '[object Object]' ? '' : full.slice(0, 80);
+}
+
+const BAD_AUTHOR = '[object Object]';
+
+// Rapports enregistrés avant la correction : un auteur « [object Object] » est retiré (le nom réel revient à la prochaine saisie).
+function fixAuthors_(state) {
+  const fix = function (o) { if (o && o.by === BAD_AUTHOR) o.by = ''; };
+  Object.keys(state.fields || {}).forEach(function (k) { fix(state.fields[k]); });
+  Object.keys(state.custom || {}).forEach(function (k) { fix(state.custom[k]); });
+  Object.keys(state.photos || {}).forEach(function (k) { fix(state.photos[k]); });
+  if (state.last && state.last.by === BAD_AUTHOR) state.last.by = 'Auteur inconnu';
+  if (state.statusBy === BAD_AUTHOR) state.statusBy = 'Auteur inconnu';
+  return state;
 }
 
 function emptyState_() {
@@ -295,7 +314,7 @@ function atCorr_(at, c) {
 function cacheGetState_(pageId) {
   const s = CacheService.getScriptCache().get('st_' + pageId);
   if (!s) return null;
-  try { return JSON.parse(s); } catch (err) { return null; }
+  try { return fixAuthors_(JSON.parse(s)); } catch (err) { return null; }
 }
 
 function cachePutState_(pageId, state) {
@@ -361,6 +380,7 @@ function loadState_(pageId, opts) {
   if (!state || state.v !== STATE_VERSION || !state.fields || !state.schema) {
     throw new ApiError_('STATE_CORRUPT', 'Données de synchronisation invalides');
   }
+  fixAuthors_(state);
   state.meta = Object.assign({}, state.meta, { root: rootId, toggle: stateId, code: code.id });
   if (!state.meta.meta) {
     const p = kids.filter(function (b) { return b.type === 'paragraph'; })[0];

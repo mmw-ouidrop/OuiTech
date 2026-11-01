@@ -52,6 +52,12 @@
   --btn-hover-bg: var(--c-navy);
   --danger: var(--c-red);            /* barre/pastille d'alerte, jamais du petit texte */
   --ring: var(--c-blue);
+  /* Couleurs de texte reprises de Notion (texte mis en forme des CR) : lisibles sur --surface, 4,5:1 au moins */
+  --rt-gray: #6b6a67; --rt-brown: #8a5a44; --rt-orange: #b85a00; --rt-yellow: #8a6414; --rt-green: #2f6f4f;
+  --rt-blue: #1f6a93; --rt-purple: #7448a0; --rt-pink: #ad2f78; --rt-red: #c0302b;
+  --rt-gray-bg: #ecebe8; --rt-brown-bg: #efe4e0; --rt-orange-bg: #fbe3cc; --rt-yellow-bg: #fbf0c8; --rt-green-bg: #dcecdf;
+  --rt-blue-bg: #d9eaf3; --rt-purple-bg: #ebe2f4; --rt-pink-bg: #f8e1ec; --rt-red-bg: #fbdcdd;
+
   --focus: 0 0 0 3px var(--surface), 0 0 0 6px var(--ring);
   --top-bg: var(--c-navy);           /* bandeau de marque : identique dans les deux thèmes */
   --top-text: var(--c-white);
@@ -68,6 +74,10 @@
     --line: #2f4a7a; --line-strong: #5f80b8;
     --btn-bg: #e5eaf5; --btn-text: #0d2e5b; --btn-hover-bg: #ffffff;
     --danger: #ff6b6b; --ring: #6ea0ff;
+    --rt-gray: #b4b4b4; --rt-brown: #d9a58c; --rt-orange: #ffae5c; --rt-yellow: #ffe066; --rt-green: #6fcfb3;
+    --rt-blue: #7cc0ee; --rt-purple: #c4a0f0; --rt-pink: #f58bc0; --rt-red: #ff8a80;
+    --rt-gray-bg: #3c4650; --rt-brown-bg: #4a3a35; --rt-orange-bg: #5a4630; --rt-yellow-bg: #5a5330; --rt-green-bg: #2f4d48;
+    --rt-blue-bg: #2f4b5e; --rt-purple-bg: #433a5c; --rt-pink-bg: #55354a; --rt-red-bg: #5a3535;
   }
 }
 :root[data-theme='dark'] {
@@ -78,6 +88,10 @@
   --line: #2f4a7a; --line-strong: #5f80b8;
   --btn-bg: #e5eaf5; --btn-text: #0d2e5b; --btn-hover-bg: #ffffff;
   --danger: #ff6b6b; --ring: #6ea0ff;
+  --rt-gray: #b4b4b4; --rt-brown: #d9a58c; --rt-orange: #ffae5c; --rt-yellow: #ffe066; --rt-green: #6fcfb3;
+  --rt-blue: #7cc0ee; --rt-purple: #c4a0f0; --rt-pink: #f58bc0; --rt-red: #ff8a80;
+  --rt-gray-bg: #3c4650; --rt-brown-bg: #4a3a35; --rt-orange-bg: #5a4630; --rt-yellow-bg: #5a5330; --rt-green-bg: #2f4d48;
+  --rt-blue-bg: #2f4b5e; --rt-purple-bg: #433a5c; --rt-pink-bg: #55354a; --rt-red-bg: #5a3535;
 }
 
 /* Hiérarchie DESKTOP (charte p. 11) */

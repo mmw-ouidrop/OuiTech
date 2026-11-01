@@ -4,7 +4,7 @@
 // Le composant ne stocke rien : il émet `update` ; l'écran enregistre (autosave local).
 import { computed, ref } from 'vue'
 import PhotoField from './PhotoField.vue'
-import { formatFieldValue, formatTime } from '../lib/format.js'
+import { formatFieldValue, formatTime, personName } from '../lib/format.js'
 
 const props = defineProps({
   item: { type: Object, required: true },
@@ -109,7 +109,7 @@ const confirmRemove = ref(false)
     <!-- Un collègue a modifié ce champ après moi : rien n'est perdu, on choisit -->
     <div v-if="conflict" class="note conflict" role="status">
       <p>
-        <strong>{{ conflict.theirs.by || 'Un collègue' }}</strong> a modifié ce champ
+        <strong>{{ personName(conflict.theirs.by) || 'Un collègue' }}</strong> a modifié ce champ
         à {{ formatTime(conflict.theirs.at) }} : « {{ formatFieldValue(conflict.theirs.v) }} ».
         Votre saisie était : « {{ formatFieldValue(conflict.mine) }} ».
       </p>

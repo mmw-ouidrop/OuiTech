@@ -18,7 +18,7 @@ const label = computed(() => props.item.name || props.item.caption || 'Fichier')
   <div class="tm">
     <template v-if="item.type === 'image'">
       <figure v-if="item.url" class="tm__ext">
-        <img :src="item.url" :alt="item.caption" loading="lazy" referrerpolicy="no-referrer" />
+        <img :src="item.url" :alt="item.caption" referrerpolicy="no-referrer" />
         <figcaption v-if="item.caption" class="small muted">{{ item.caption }}</figcaption>
       </figure>
       <MethodImage v-else :page-id="pageId" :media-key="item.blockId" :caption="item.caption" :service="missionMedia" />
@@ -34,6 +34,6 @@ const label = computed(() => props.item.name || props.item.caption || 'Fichier')
 <style scoped>
 .tm { margin: var(--s-3) 0; }
 .tm__ext { margin: 0; }
-.tm__ext img { display: block; width: 100%; height: auto; max-height: 70vh; object-fit: contain; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-2); }
+.tm__ext img { display: block; width: 100%; height: auto; min-height: 80px; max-height: 70vh; object-fit: contain; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-2); }
 .tm__file { margin: 0; }
 </style>

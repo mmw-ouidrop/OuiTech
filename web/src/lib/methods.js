@@ -328,3 +328,7 @@ export function createMediaService({ store, api, isOnline = () => true }) {
 // Éléments du contenu d'une mission à afficher (images, vidéos, fichiers hébergés par Notion : clé = id du bloc).
 export const hostedMediaKeys = (templateBlocks) =>
   (templateBlocks || []).filter((b) => b.kind === 'media' && !b.url && (b.type === 'image' || b.type === 'file' || b.type === 'pdf')).map((b) => b.blockId)
+
+// Fichiers des colonnes « Fichiers » de la mission à garder sur l'appareil : images et PDF hébergés par Notion (pas les vidéos, trop lourdes).
+export const propertyFileKeys = (properties) =>
+  (properties || []).flatMap((p) => (p.files || []).filter((f) => !f.url && (f.kind === 'image' || f.kind === 'pdf')).map((f) => f.key))

@@ -44,7 +44,7 @@
  *    Auth.gs         connexion par mot de passe (2 niveaux), sessions signées
  *    Methods.gs      fiches méthodes (lecture seule) : liste, fiche, médias
  *    Machines.gs     liste des machines (lecture seule) : liste, fiche, photos
- *    Racks Casiers.gs        racks et casiers KO : vue d'ensemble, liste par site, diagnostic du technicien
+ *    Racks.gs        racks et casiers KO : vue d'ensemble, liste par site, diagnostic du technicien
  *    appsscript.json manifeste
  *
  *  ROUTES
@@ -57,8 +57,8 @@
  *           → { unchanged:true } ou l'état du rapport (relève des collègues)
  *    GET  ?action=methods | method | methodMedia   → fiches méthodes (voir Methods.gs)
  *    GET  ?action=machines | machine | machineMedia → liste des machines (voir Machines.gs)
- *    GET  ?action=racksOverview | racks&site=<pageId>  → racks et casiers KO (voir Racks Casiers.gs)
- *    POST { action:"methodComment" | "rackDiagnosis", … } → commentaire de méthode / diagnostic (voir Methods.gs, Racks Casiers.gs)
+ *    GET  ?action=racksOverview | racks&site=<pageId>  → racks et casiers KO (voir Racks.gs)
+ *    POST { action:"methodComment" | "rackDiagnosis", … } → commentaire de méthode / diagnostic (voir Methods.gs, Racks.gs)
  *    POST { action:"uploadMedia", session, fileData, fileName, mimeType,
  *           mediaId?, reference? }                 → { fileId, ... }
  *    POST { action:"syncReport", … }               → voir Report.gs
@@ -76,6 +76,10 @@
  */
 
 /* ─────────────────────────────── Constantes ─────────────────────────────── */
+
+// Version du code. `?action=ping` la renvoie : si elle ne correspond pas à celle de l'archive reçue, le déploiement
+// (« Gérer les déploiements ▸ Nouvelle version ») n'a pas été mis à jour.
+const SCRIPT_VERSION = '2026-11-01.1';
 
 const NOTION_API = 'https://api.notion.com/v1';
 
@@ -105,13 +109,22 @@ const LEGACY_REPORT_ICON = '📋';
 const DRIVE_ID_RE = /^[A-Za-z0-9_-]{20,80}$/;   // forme d'un fileId Drive
 const TEMP_RETENTION_DAYS = 14;                  // purge des fichiers de transit orphelins
 
-// Colonnes Notion à ne pas exposer à la PWA (noms exacts). Valeur par défaut ;
-// la propriété de script HIDDEN_PROPERTIES (noms séparés par « | ») la remplace.
-const HIDDEN_PROPERTIES = ["Créé au PIC|🗓️ Planification Interventions|Mise en service le|Email technicien|Temps total (en minutes)|Missions (OLD)|Action OLD|Photos d'inter 2|Créateur|État|Heure d’envoi"];
-// Colonnes à afficher en premier, dans cet ordre. L'API Notion ne documente aucun
-// ordre pour les propriétés d'une page : on le fixe ici (ou par la propriété de
-// script PROPERTY_ORDER, noms séparés par « | »). Les colonnes non citées suivent.
-const PROPERTY_ORDER = ["Technicien|Support technique|Date d’intervention|ID|Statut|Dropper|N° de machine|Format Dropper|Adresse machine|Code boite à clé|Accès wifi|Pièces maintenance|Type d’intervention|Contexte|Possibilité de bloquer ?|Autres informations|Matériel / outillage à prévoir|Infos complémentaires|Heure de début|Heure de fin|Compte rendu|Pièces changées par machine|PDF Ouifixit"];
+// Colonnes Notion à ne pas exposer à la PWA. Valeur par défaut ; la propriété de script HIDDEN_PROPERTIES
+// (noms séparés par « | ») la remplace. Un nom par élément ; la casse, les accents et le type d'apostrophe (’ ou ')
+// n'ont pas d'importance. (Une seule chaîne « A|B|C » dans la liste est aussi comprise.)
+const HIDDEN_PROPERTIES = [
+  'Créé au PIC', '🗓️ Planification Interventions', 'Mise en service le', 'Email technicien', 'Temps total (en minutes)',
+  'Missions (OLD)', 'Action OLD', "Photos d'inter 2", 'Créateur', 'État', 'Heure d’envoi'
+];
+// Colonnes à afficher en premier, dans cet ordre. L'API Notion ne documente aucun ordre pour les propriétés d'une
+// page : on le fixe ici (ou par la propriété de script PROPERTY_ORDER, noms séparés par « | »). Les colonnes non
+// citées suivent. Même règle de noms que ci-dessus.
+const PROPERTY_ORDER = [
+  'Technicien', 'Support technique', 'Date d’intervention', 'ID', 'Statut', 'Dropper', 'N° de machine', 'Format Dropper',
+  'Adresse machine', 'Code boite à clé', 'Accès wifi', 'Pièces maintenance', 'Type d’intervention', 'Contexte',
+  'Possibilité de bloquer ?', 'Autres informations', 'Matériel / outillage à prévoir', 'Infos complémentaires',
+  'Heure de début', 'Heure de fin', 'Compte rendu', 'Pièces changées par machine', 'PDF Ouifixit'
+];
 
 // Types de champs que le formulaire sait afficher (voir le mémo de templates).
 const COMPONENT_TYPES = ['text', 'textarea', 'number', 'checkbox', 'radio_group',
@@ -122,7 +135,8 @@ const RESERVED_ID_RE = /^(u_|todo_|S:)/;
 
 const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;   // taille décodée max d'une photo
 const MAX_TEMPLATE_HTML = 100000;              // caractères max d'un bloc HTML du template
-const MAX_NEST_DEPTH = 2;                    // profondeur de lecture des toggles
+const MAX_NEST_DEPTH = 4;                    // profondeur de lecture (toggles, listes à puces imbriquées…)
+const MAX_TEMPLATE_CALLS = 80;               // requêtes Notion maximum pour lire le contenu d'une page
 const NOTION_MAX_CHILDREN = 100;             // limite Notion par requête append
 const NOTION_MAX_TEXT = 2000;                // limite Notion par objet rich_text
 const MAX_FIELD_CHARS = 20000;               // garde-fou sur les saisies libres
@@ -163,7 +177,7 @@ function fail_(err) {
 function doGet(e) {
   try {
     const p = (e && e.parameter) || {};
-    if (p.action === 'ping') return ok_({ ts: new Date().toISOString() });
+    if (p.action === 'ping') return ok_({ ts: new Date().toISOString(), version: SCRIPT_VERSION });
     const auth = authorize_(p.session, 'tech');
     switch (p.action) {
       case 'session':
@@ -326,13 +340,18 @@ function getIntervention_(idParam) {
 
   // 1) Propriétés (colonnes) — génériques, sans nom de colonne en dur.
   let properties = [];
-  const hiddenProperties = nameList_('HIDDEN_PROPERTIES', HIDDEN_PROPERTIES);
+  const hiddenProperties = nameList_('HIDDEN_PROPERTIES', HIDDEN_PROPERTIES).map(propKey_);
   Object.keys(page.properties).forEach(function (name) {
-    if (hiddenProperties.indexOf(name) > -1) return;
+    if (hiddenProperties.indexOf(propKey_(name)) > -1) return;
     const prop = page.properties[name];
-    const value = formatProperty_(prop);
-    if (value === null || value === undefined) return;
-    properties.push({ label: name, value: value, type: prop.type });
+    let value = formatProperty_(prop);
+    if (value === null || value === undefined) {
+      if (prop.type !== 'number') return;      // un nombre non renseigné reste listé (affiché dans « champs vides »)
+      value = '';
+    }
+    const entry = { label: name, value: value, type: prop.type };
+    if (prop.type === 'files') entry.files = propertyFiles_(name, prop);
+    properties.push(entry);
   });
   properties = sortProperties_(properties);
 
@@ -428,18 +447,33 @@ function referenceOf_(page, fallback) {
   return fallback;
 }
 
-// Liste de noms de colonnes : propriété de script (séparée par « | ») sinon constante.
+// Liste de noms : propriété de script (séparée par « | ») sinon constante. Chaque élément de la constante peut lui-même
+// contenir plusieurs noms séparés par « | » (["A|B|C"] équivaut à ["A", "B", "C"]).
+function splitNames_(list) {
+  const out = [];
+  (list || []).forEach(function (item) {
+    String(item).split('|').forEach(function (x) { x = x.trim(); if (x) out.push(x); });
+  });
+  return out;
+}
+
 function nameList_(key, fallback) {
   const raw = cfg_(key, '');
-  if (!raw) return fallback;
-  return raw.split('|').map(function (x) { return x.trim(); }).filter(Boolean);
+  return raw ? splitNames_([raw]) : splitNames_(fallback);
+}
+
+// Nom de colonne comparé sans tenir compte de la casse, des accents, des apostrophes typographiques (’ ou '),
+// des espaces multiples ni du sélecteur d'emoji : « Date d’intervention » = « date d'intervention ».
+function propKey_(name) {
+  return String(name || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f\ufe0e\ufe0f]/g, '')
+    .replace(/[\u2018\u2019\u02bc`´]/g, "'").replace(/\s+/g, ' ').trim();
 }
 
 function sortProperties_(list) {
-  const order = nameList_('PROPERTY_ORDER', PROPERTY_ORDER);
+  const order = nameList_('PROPERTY_ORDER', PROPERTY_ORDER).map(propKey_);
   if (!order.length) return list;
   const rank = function (p) {
-    const i = order.indexOf(p.label);
+    const i = order.indexOf(propKey_(p.label));
     return i === -1 ? order.length : i;
   };
   return list
@@ -520,7 +554,7 @@ function formatProperty_(prop) {
  *  templateBlocks est une liste PLATE et ORDONNÉE ; chaque élément a un `kind` :
  *    { kind:"section",   level:1|2|3, text, blockId }
  *    { kind:"component", id, type, label, ...options, blockId }   (JSON Notion)
- *    { kind:"text",      style, text, blockId }        (consignes, paragraphes)
+ *    { kind:"text",      style, text, rt, level?, icon?, blockId }   (consignes, paragraphes, listes ; rt = texte mis en forme)
  *    { kind:"divider" }
  *    { kind:"media",     type:"image|video|pdf|file|audio", blockId, name, caption, url? }   (url : lien externe seulement ;
  *                         un fichier hébergé par Notion est servi par la route missionMedia)
@@ -531,10 +565,13 @@ function formatProperty_(prop) {
  *  Un bloc de code JSON peut contenir un objet OU un tableau d'objets.
  * ──────────────────────────────────────────────────────────────────────────── */
 
-function fetchBlocks_(blockId, depth) {
+function fetchBlocks_(blockId, depth, budget) {
+  budget = budget || { calls: 0 };
   const out = [];
   let cursor = null;
   do {
+    if (budget.calls >= MAX_TEMPLATE_CALLS) return out;      // page très longue : on garde ce qui est déjà lu
+    budget.calls++;
     const query = '?page_size=100' + (cursor ? '&start_cursor=' + encodeURIComponent(cursor) : '');
     const res = notion_('GET', '/blocks/' + blockId + '/children' + query);
     (res.results || []).forEach(function (b) { out.push(b); });
@@ -544,16 +581,24 @@ function fetchBlocks_(blockId, depth) {
   if (depth < MAX_NEST_DEPTH) {
     out.forEach(function (b) {
       if (b.has_children && isNestable_(b) && !isReportBlock_(b) && !isStateBlock_(b)) {
-        b._children = fetchBlocks_(b.id, depth + 1);
+        b._children = fetchBlocks_(b.id, depth + 1, budget);
       }
     });
   }
   return out;
 }
 
+// Blocs dont on lit aussi le contenu : toggles et titres déroulants, listes imbriquées, citations, encadrés, colonnes.
+const NESTABLE_TYPES = ['toggle', 'bulleted_list_item', 'numbered_list_item', 'to_do', 'quote', 'callout', 'column_list', 'column'];
+
 function isNestable_(b) {
-  if (b.type === 'toggle') return true;
+  if (NESTABLE_TYPES.indexOf(b.type) > -1) return true;
   return /^heading_[123]$/.test(b.type) && b[b.type] && b[b.type].is_toggleable === true;
+}
+
+// Un toggle ou un titre déroulant : seuls ceux-là peuvent servir de conteneur « Template … ».
+function isToggleLike_(b) {
+  return b.type === 'toggle' || (/^heading_[123]$/.test(b.type) && !!b[b.type] && b[b.type].is_toggleable === true);
 }
 
 // Un toggle (ou un titre déroulant) dont le titre commence par « Template » est un simple
@@ -561,7 +606,7 @@ function isNestable_(b) {
 // retrouver le rapport juste en dessous. Son titre n'est pas un champ ni une section du formulaire ;
 // son contenu est lu normalement.
 function isTemplateContainer_(b) {
-  if (!isNestable_(b)) return false;
+  if (!isToggleLike_(b)) return false;
   const title = plain_((b[b.type] || {}).rich_text).trim().toLowerCase()
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   return title.indexOf('template') === 0;
@@ -630,7 +675,7 @@ function convertBlocks_(blocks, ctx, depth) {
         break;
 
       case 'paragraph':
-        if (text.trim()) ctx.out.push({ kind: 'text', style: 'paragraph', text: text, blockId: b.id });
+        if (text.trim()) ctx.out.push(textBlock_('paragraph', b, data, text, ctx));
         break;
 
       case 'bulleted_list_item':
@@ -638,14 +683,7 @@ function convertBlocks_(blocks, ctx, depth) {
       case 'quote':
       case 'callout':
       case 'toggle':
-        if (text.trim()) {
-          ctx.out.push({
-            kind: 'text',
-            style: t.replace(/_item$/, ''),
-            text: text,
-            blockId: b.id
-          });
-        }
+        if (text.trim()) ctx.out.push(textBlock_(t.replace(/_item$/, ''), b, data, text, ctx));
         break;
 
       case 'divider':
@@ -656,8 +694,47 @@ function convertBlocks_(blocks, ctx, depth) {
         break;   // images, embeds, tableaux… ignorés pour l'instant
     }
 
-    if (b._children) convertBlocks_(b._children, ctx, depth + 1);
+    if (b._children) {
+      const isList = t === 'bulleted_list_item' || t === 'numbered_list_item';
+      if (isList) ctx.level = (ctx.level || 0) + 1;
+      convertBlocks_(b._children, ctx, depth + 1);
+      if (isList) ctx.level -= 1;
+    }
   }
+}
+
+// Bloc de texte du template. `text` : texte brut (anciennes versions de l'application) ; `rt` : texte mis en forme
+// (gras, italique, souligné, barré, code, lien, couleur) ; `level` : niveau d'imbrication d'une liste à puces / numérotée.
+function textBlock_(style, b, data, text, ctx) {
+  const out = { kind: 'text', style: style, text: text, rt: rich_to_segments_(data.rich_text), blockId: b.id };
+  if (style === 'bulleted_list' || style === 'numbered_list') out.level = Math.min(ctx.level || 0, 3);
+  if (style === 'callout' && data.icon && data.icon.type === 'emoji') out.icon = data.icon.emoji;
+  return out;
+}
+
+/* ── Texte mis en forme et fichiers (partagés avec Methods.gs) ──────────────── */
+
+function rich_to_segments_(rich) {
+  return (rich || []).map(function (r) {
+    const seg = { t: r.plain_text !== undefined ? r.plain_text : ((r.text && r.text.content) || '') };
+    const a = r.annotations || {};
+    if (a.bold) seg.b = 1;
+    if (a.italic) seg.i = 1;
+    if (a.strikethrough) seg.s = 1;
+    if (a.underline) seg.u = 1;
+    if (a.code) seg.c = 1;
+    if (a.color && a.color !== 'default') seg.col = a.color;      // red, blue_background…
+    const href = r.href || (r.text && r.text.link && r.text.link.url);
+    if (href) seg.h = href;
+    return seg;
+  }).filter(function (s) { return s.t !== ''; });
+}
+
+function fileInfo_(data) {
+  // data = contenu d'un bloc image/video/file/pdf : { type:'file'|'external', file:{url}|external:{url}, caption }
+  if (!data) return { url: '', external: false };
+  if (data.type === 'external') return { url: (data.external || {}).url || '', external: true };
+  return { url: (data.file || {}).url || '', external: false };
 }
 
 // Signale (sans rien supprimer) les définitions de champs douteuses : le
@@ -710,16 +787,46 @@ function parseJsonComponents_(block, src, ctx) {
   });
 }
 
-// Image / vidéo / PDF / fichier posé dans le contenu d'une page de mission (template ou consigne) : servi par le
-// serveur, car les liens de fichiers Notion expirent après ~1 h. Seuls les blocs de CETTE page, et seulement si
-// la page appartient à la base des interventions, sont servis. Même réponse que methodMedia.
+// Image / vidéo / PDF / fichier posé dans le contenu d'une page de mission (template ou consigne), ou fichier d'une colonne
+// « Fichiers » de la mission : servi par le serveur, car les liens de fichiers Notion expirent après ~1 h. Seuls les blocs de
+// CETTE page, et seulement si la page appartient à la base des interventions, sont servis. Même réponse que methodMedia.
 function getMissionMedia_(p) {
   const pageId = plainId_(p.page);
   if (!/^[0-9a-f]{32}$/.test(pageId)) throw new ApiError_('BAD_REQUEST', 'Identifiant de page invalide');
   const page = notion_('GET', '/pages/' + pageId);
   const par = page.parent || {};
   if (plainId_(par.database_id) !== plainId_(cfg_('NOTION_DB_ID', ''))) throw new ApiError_('NOT_FOUND', 'Page introuvable');
-  return deliverMedia_(mediaSource_(page, p.key, []), p.mode);
+  const fileProps = Object.keys(page.properties || {}).filter(function (n) { return page.properties[n].type === 'files'; });
+  return deliverMedia_(mediaSource_(page, p.key, fileProps), p.mode);
+}
+
+const FILE_KINDS = {
+  image: /\.(jpe?g|png|gif|webp|avif|heic|heif|bmp|svg)$/i,
+  video: /\.(mp4|mov|webm|m4v|ogv)$/i,
+  pdf: /\.pdf$/i
+};
+
+function fileKind_(name) {
+  const n = String(name || '').split('?')[0];
+  if (FILE_KINDS.image.test(n)) return 'image';
+  if (FILE_KINDS.video.test(n)) return 'video';
+  if (FILE_KINDS.pdf.test(n)) return 'pdf';
+  return 'file';
+}
+
+// Fichiers d'une colonne « Fichiers et médias » : [{ key, name, kind, url? }]. Un fichier hébergé par Notion se demande par sa
+// clé (route missionMedia, l'adresse expire) ; une adresse externe https est transmise telle quelle.
+function propertyFiles_(propName, prop) {
+  return (prop.files || []).map(function (f, i) {
+    const info = fileInfo_(f);
+    const name = f.name || (info.url ? decodeURIComponent(info.url.split('?')[0].split('/').pop() || '') : '') || 'Fichier';
+    const out = { key: 'p:' + propName + ':' + i, name: name, kind: fileKind_(f.name || info.url) };
+    if (info.external) {
+      if (!/^https:\/\//.test(info.url)) return null;
+      out.url = info.url;
+    }
+    return out;
+  }).filter(Boolean);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

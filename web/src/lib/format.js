@@ -8,6 +8,16 @@ function formatDateString(s) {
   return new Intl.DateTimeFormat('fr-FR', withTime ? { dateStyle: 'medium', timeStyle: 'short' } : { dateStyle: 'medium' }).format(d)
 }
 
+// Propriété sans valeur (texte vide, liste vide, aucun fichier) : rangée dans « Champs vides ». Un « Non » ou un 0 est une valeur.
+export function isEmptyProperty(prop) {
+  if (Array.isArray(prop.files)) return prop.files.length === 0
+  const v = prop.value
+  if (v === null || v === undefined) return true
+  if (Array.isArray(v)) return v.length === 0
+  if (typeof v === 'string') return v.trim() === ''
+  return false
+}
+
 export function formatPropertyValue(prop) {
   const v = prop.value
   if (v === null || v === undefined || v === '') return '—'
@@ -53,4 +63,14 @@ export function missionStatus(rec) {
   if (pending) return { label: rec.lastSyncAt ? 'Modifié · à envoyer' : 'Brouillon · à envoyer', tone: 'info' }
   if (rec.lastSyncAt || (rec.baseRev || 0) > 0) return { label: 'Enregistré', tone: 'neutral' }
   return { label: 'Brouillon', tone: 'neutral' }
+}
+
+// Nom d'une personne, quelle que soit la forme reçue : texte, { firstName, lastName } ou { name }. Jamais « [object Object] ».
+export function personName(v) {
+  if (typeof v === 'string') return v === '[object Object]' ? '' : v.trim()
+  if (v && typeof v === 'object') {
+    const full = [v.firstName, v.lastName].filter((x) => typeof x === 'string' && x.trim()).join(' ')
+    return full || (typeof v.name === 'string' ? v.name.trim() : '')
+  }
+  return ''
 }

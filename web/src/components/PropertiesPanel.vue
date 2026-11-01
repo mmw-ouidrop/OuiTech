@@ -3,25 +3,32 @@
 // titre, réorganisables et masquables via « Personnaliser ». Les choix sont propres
 // à l'appareil (voir lib/propPrefs.js) ; ils ne modifient jamais Notion.
 import { computed, ref, watch } from 'vue'
-import { formatPropertyValue } from '../lib/format.js'
+import { formatPropertyValue, isEmptyProperty } from '../lib/format.js'
+import FileTiles from './FileTiles.vue'
 import { loadPrefs, savePrefs, splitVisible, moveProperty, setHidden, resetPrefs } from '../lib/propPrefs.js'
 
 const props = defineProps({
-  properties: { type: Array, required: true }
+  properties: { type: Array, required: true },
+  pageId: { type: String, default: '' }        // page de la mission : sert à relire les fichiers des champs
 })
 
 const prefs = ref(loadPrefs())
 const editing = ref(false)
+const showEmpty = ref(false)               // « Champs vides » : repliés tant qu'on ne les demande pas
 
 watch(prefs, (p) => savePrefs(p), { deep: true })
 
 const split = computed(() => splitVisible(props.properties, prefs.value))
 const hiddenLabels = computed(() => new Set(prefs.value.hidden))
 
+const filled = computed(() => split.value.visible.filter((p) => !isEmptyProperty(p)))
+const empty = computed(() => split.value.visible.filter((p) => isEmptyProperty(p)))
+
 const summary = computed(() => {
-  const n = split.value.visible.length
+  const n = filled.value.length
+  const e = empty.value.length
   const h = split.value.hidden.length
-  return `${n} champ${n > 1 ? 's' : ''}` + (h ? ` · ${h} masqué${h > 1 ? 's' : ''}` : '')
+  return `${n} champ${n > 1 ? 's' : ''}` + (e ? ` · ${e} vide${e > 1 ? 's' : ''}` : '') + (h ? ` · ${h} masqué${h > 1 ? 's' : ''}` : '')
 })
 
 function toggleCollapsed() {
@@ -58,12 +65,31 @@ const reset = () => (prefs.value = resetPrefs(prefs.value))
 
     <div v-show="!prefs.collapsed" id="info-body" class="panel__body">
       <dl v-if="!editing" class="props">
-        <template v-for="p in split.visible" :key="p.label">
+        <template v-for="p in filled" :key="p.label">
           <dt>{{ p.label }}</dt>
-          <dd>{{ formatPropertyValue(p) }}</dd>
+          <dd>
+            <FileTiles v-if="p.files && p.files.length && pageId" :page-id="pageId" :files="p.files" />
+            <template v-else>{{ formatPropertyValue(p) }}</template>
+          </dd>
         </template>
       </dl>
       <p v-if="!editing && !split.visible.length" class="small muted">Tous les champs sont masqués.</p>
+      <p v-else-if="!editing && !filled.length" class="small muted">Aucun champ renseigné.</p>
+
+      <div v-if="!editing && empty.length" class="empties">
+        <button type="button" class="empties__btn" :aria-expanded="showEmpty" aria-controls="info-empty" @click="showEmpty = !showEmpty">
+          <svg class="panel__chevron" :class="{ 'panel__chevron--closed': !showEmpty }" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+            <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+          <span>Champs vides ({{ empty.length }})</span>
+        </button>
+        <dl v-show="showEmpty" id="info-empty" class="props props--empty">
+          <template v-for="p in empty" :key="p.label">
+            <dt>{{ p.label }}</dt>
+            <dd class="muted">—</dd>
+          </template>
+        </dl>
+      </div>
 
       <template v-if="editing">
         <p class="small muted">
@@ -114,6 +140,9 @@ const reset = () => (prefs.value = resetPrefs(prefs.value))
 .panel__edit:hover, .panel__edit[aria-pressed='true'] { background: var(--surface-2); color: var(--heading); border-color: var(--heading); }
 .panel__body { margin-top: var(--s-3); }
 
+.empties { margin-top: var(--s-4); border-top: 1px solid var(--line); padding-top: var(--s-2); }
+.empties__btn { display: inline-flex; align-items: center; gap: var(--s-2); min-height: var(--tap); padding: 0; border: 0; background: transparent; color: var(--accent); font: 600 var(--fs-small)/1.3 var(--f-body); cursor: pointer; }
+.props--empty { margin-top: var(--s-2); }
 .props { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px var(--s-4); margin: 0; }
 .props dt { font: 600 var(--fs-small)/1.3 var(--f-body); color: var(--heading); margin-top: var(--s-3); }
 .props dt:first-child { margin-top: 0; }

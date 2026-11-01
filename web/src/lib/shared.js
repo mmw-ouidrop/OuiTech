@@ -12,6 +12,8 @@
 //    conflicts { [id]: { mine, theirs:{v,by,at} } }    saisies écrasées par un collègue
 // ============================================================================
 
+import { personName } from './format.js'
+
 export const PHOTOS_PER_REQUEST = 6        // identique au serveur (MAX_PHOTOS_PER_CALL)
 export const CUSTOM_SECTION_ID = 'S:custom'
 export const CUSTOM_SECTION_TITLE = 'Ajouts terrain'
@@ -44,12 +46,31 @@ export function isFilled(item, value, photoCount = 0) {
 /* ─────────────────────── Éléments affichés dans le formulaire ──────────────── */
 
 // Template (tel que lu dans Notion) puis champs ajoutés par les techniciens.
+// Texte : `rt` = texte mis en forme (gras, souligné, couleur…), `level` = niveau d'une liste, `num` = numéro d'une liste numérotée
+// (calculé ici : Notion repart à 1 après tout bloc qui n'est pas dans la liste).
+export const LIST_STYLES = ['bulleted_list', 'numbered_list']
+
 export function buildItems(rec) {
   const items = []
+  const counters = []
   for (const b of rec.templateBlocks || []) {
+    if (b.kind === 'text' && LIST_STYLES.includes(b.style)) {
+      const level = Math.max(0, Number(b.level) || 0)
+      const item = { k: 'text', id: 'T:' + b.blockId, style: b.style, text: b.text, rt: b.rt || null, level }
+      if (b.style === 'numbered_list') {
+        counters.length = level + 1
+        counters[level] = (counters[level] || 0) + 1
+        item.num = counters[level]
+      } else {
+        counters.length = Math.min(counters.length, level)
+      }
+      items.push(item)
+      continue
+    }
+    counters.length = 0
     if (b.kind === 'section') items.push({ k: 'section', id: 'S:' + b.blockId, level: b.level, text: b.text })
     else if (b.kind === 'component') items.push({ k: 'field', ...b })
-    else if (b.kind === 'text') items.push({ k: 'text', id: 'T:' + b.blockId, style: b.style, text: b.text })
+    else if (b.kind === 'text') items.push({ k: 'text', id: 'T:' + b.blockId, style: b.style, text: b.text, rt: b.rt || null, icon: b.icon || '' })
     else if (b.kind === 'divider') items.push({ k: 'divider', id: 'D:' + b.blockId })
     else if (b.kind === 'media') items.push({ k: 'media', id: 'M:' + b.blockId, type: b.type, blockId: b.blockId, name: b.name, caption: b.caption, url: b.url })
     else if (b.kind === 'link') items.push({ k: 'link', id: 'L:' + b.blockId, url: b.url, text: b.text })
@@ -169,7 +190,7 @@ export function mergeServerState(rec, report, ctx = {}) {
     const ackedHere = dirty && sentAt !== undefined && sentAt === local.at && !rejectedFields.has(id)
     if (dirty && !ackedHere) continue                 // modifiée depuis l'envoi, ou refusée : on garde la mienne
     const s = serverFields[id]
-    fields[id] = { v: s.v, at: s.at, by: s.by }
+    fields[id] = { v: s.v, at: s.at, by: personName(s.by) }
     if (ackedHere && overridden[id]) conflicts[id] = { mine: overridden[id].mine, theirs: overridden[id].theirs }
   }
   // Envoyée, acquittée, mais absente de la réponse (champ inconnu du serveur) : on arrête de la renvoyer.
@@ -183,7 +204,7 @@ export function mergeServerState(rec, report, ctx = {}) {
   // — champs ajoutés
   const custom = {}
   const removed = new Set(report.removedCustom || [])
-  for (const c of report.custom || []) custom[c.id] = { type: c.type, label: c.label, options: c.options, by: c.by, at: c.at }
+  for (const c of report.custom || []) custom[c.id] = { type: c.type, label: c.label, options: c.options, by: personName(c.by), at: c.at }
   for (const [id, c] of Object.entries(rec.custom || {})) {
     if (!c.dirty) continue
     const wasSent = sent.customAdd.includes(id)

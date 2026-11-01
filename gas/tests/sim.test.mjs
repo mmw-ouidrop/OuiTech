@@ -42,6 +42,9 @@ test('getIntervention : token, propriétés, template, schéma', () => {
 test('ordre et masquage des propriétés : propriétés de script « | », colonnes non citées à la suite', () => {
   const w = world(); const { get } = api(w);
   const labels = () => get({ action: 'getIntervention', id: 'FI-252' }).data.properties.map((p) => p.label);
+  // valeurs par défaut du code (réglages d'OUIDROP) : « ID » puis « Statut » passent devant ; le reste suit dans l'ordre de Notion
+  assert.deepEqual(labels(), ['ID', 'Statut', 'Nom', 'Client']);
+  run(w.ctx, 'HIDDEN_PROPERTIES.length = 0; PROPERTY_ORDER.length = 0;');
   assert.deepEqual(labels(), ['Nom', 'ID', 'Client', 'Statut'], 'sans configuration : ordre de Notion');
   w.props = { PROPERTY_ORDER: ' Statut | Client ', HIDDEN_PROPERTIES: 'ID' };
   assert.deepEqual(labels(), ['Statut', 'Client', 'Nom']);

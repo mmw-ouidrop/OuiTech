@@ -3,7 +3,7 @@
 // hors ligne) ; celles des collègues arrivent sans image (le serveur ne diffuse pas de lien) :
 // on montre qui l'a prise et quand.
 import { computed, onBeforeUnmount, watch } from 'vue'
-import { formatTime } from '../lib/format.js'
+import { formatTime, personName } from '../lib/format.js'
 
 const props = defineProps({
   id: { type: String, required: true },
@@ -59,7 +59,7 @@ function pick(e) {
         <span class="photo__ph" aria-hidden="true">
           <svg viewBox="0 0 24 24" width="28" height="28"><path d="M4 7h3l2-2h6l2 2h3v12H4z M12 17a4 4 0 100-8 4 4 0 000 8z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" /></svg>
         </span>
-        <span class="photo__state small">{{ p.by }} · {{ formatTime(p.at) }}</span>
+        <span class="photo__state small">{{ personName(p.by) || 'Auteur inconnu' }} · {{ formatTime(p.at) }}</span>
       </li>
     </ul>
     <p v-else class="small muted">Aucune photo pour l’instant.</p>

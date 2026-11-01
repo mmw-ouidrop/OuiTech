@@ -43,6 +43,7 @@
 
 import Dexie from 'dexie'
 import { uuid } from './lib/uuid.js'
+import { personName } from './lib/format.js'
 import {
   effectiveStatus, needsSync as computeNeedsSync, mergeServerState, markAllDirty, restoreMine,
   dismissConflict, migrateV1Record, schemaFromTemplate, V1_OBSOLETE_KEYS
@@ -395,7 +396,7 @@ export function createStore(name = 'ouidrop-interventions') {
 
       let notice = rec.notice
       if (result.rejected && result.rejected.reason === 'VALIDATED') {
-        const by = result.report.statusBy
+        const by = personName(result.report.statusBy)
         notice = { code: 'VALIDATED_BY_OTHER', message: `${by || 'Un collègue'} a validé le CR : vos dernières saisies sont gardées sur cet appareil. Rouvrez le CR pour les envoyer.`, at: now() }
       }
       return commit(rec, { notice, lastSyncAt: now(), lastError: null })
@@ -415,9 +416,9 @@ export function createStore(name = 'ouidrop-interventions') {
       let notice = rec.notice
       const isValidated = effectiveStatus(rec) === 'validated'
       if (isValidated && !wasValidated) {
-        notice = { code: 'VALIDATED_BY_OTHER', message: `${report.statusBy || 'Un collègue'} a validé le CR.`, at: now() }
+        notice = { code: 'VALIDATED_BY_OTHER', message: `${personName(report.statusBy) || 'Un collègue'} a validé le CR.`, at: now() }
       } else if (!isValidated && wasValidated) {
-        notice = { code: 'REOPENED_BY_OTHER', message: `${report.statusBy || 'Un collègue'} a rouvert le CR.`, at: now() }
+        notice = { code: 'REOPENED_BY_OTHER', message: `${personName(report.statusBy) || 'Un collègue'} a rouvert le CR.`, at: now() }
       }
       return commit(rec, { notice })
     })

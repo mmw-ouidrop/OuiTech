@@ -18,7 +18,7 @@ Erreurs d'accès sur toute autre route : `UNAUTHORIZED` (absente / invalide), `S
 
 | Appel | Rôle |
 |---|---|
-| `?action=ping` | Sans token. Vérifie que le déploiement répond. |
+| `?action=ping` | Sans token. Vérifie que le déploiement répond et renvoie `version` (celle du code déployé : à comparer avec `SCRIPT_VERSION` de Code.gs). |
 | `?action=getIntervention&id=FI-252` | Mission complète : propriétés, template, schéma, rapport partagé. |
 | `?action=getReport&pageId=…&sinceRev=N&clientId=…&name=Prénom Nom` | Relève légère (toutes les ~60 s tant que la fiche est ouverte). |
 | `?action=methods&sinceRev=…` | Fiches méthodes publiées : `{ rev, items:[{id,title,groups,status,updated,summary}] }` ou `{ unchanged:true, rev }`. |
@@ -38,6 +38,12 @@ Détail des fiches méthodes (nœuds, sections, propriétés de script) : en-tê
 
 ### getIntervention → `data`
 `id, reference, title, url, lastEdited, properties[], templateBlocks[], warnings[]`, plus :
+
+- `properties[]` : `{ label, value, type, files? }`, triées d'après `PROPERTY_ORDER`, sans les colonnes de `HIDDEN_PROPERTIES`
+  (noms comparés sans casse, accents ni différence d'apostrophe). Une colonne de type fichiers porte `files:[{ key, name, kind:'image'|'video'|'pdf'|'file', url? }]` :
+  `key` (`p:<colonne>:<rang>`) se lit par `missionMedia` ; `url` n'existe que pour un lien externe https.
+- `templateBlocks[]` de type texte : `{ kind:'text', style, text, rt, level?, icon?, blockId }`. `style` : `paragraph`, `bulleted_list`, `numbered_list`, `quote`, `callout`, `toggle` ;
+  `rt` = segments mis en forme `{ t, b?, i?, s?, u?, c?, h?, col? }` (gras, italique, barré, souligné, code, lien, couleur Notion) ; `level` = niveau d'une liste (0 à 3).
 
 - `schema[]` : liste plate et ordonnée de ce que le rapport affiche.
   `{k:'s', id, text, level}` pour un intertitre, `{k:'f', id, type, label, options?}` pour un champ.
@@ -65,7 +71,7 @@ editors[]      autres appareils actifs : { clientId, name, agoSec }
 
 ## GET `missionMedia`
 
-`?action=missionMedia&page=<pageId de la mission>&key=<id du bloc>&mode=data|url` : image / fichier posé dans le contenu d'une page de mission
+`?action=missionMedia&page=<pageId de la mission>&key=<id du bloc ou p:<colonne>:<rang>>&mode=data|url` : image / fichier posé dans le contenu d'une page de mission, ou fichier d'une colonne de type fichiers
 (même réponse que `methodMedia` : `{ name, mime, size, data }`, `{ …, tooLarge:true, url }` ou, en mode `url`, `{ name, url }`).
 `getIntervention` renvoie en plus, dans `templateBlocks`, des éléments `{ kind:"media", type, blockId, name, caption, url? }`, `{ kind:"link", url, text }`
 et `{ kind:"html", blockId, html }` (bloc de code HTML). Seule une page de la base des interventions est servie ; erreur `NOT_FOUND` sinon.

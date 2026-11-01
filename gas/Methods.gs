@@ -187,27 +187,7 @@ function sectionKind_(title) {
   return 'other';
 }
 
-function rich_to_segments_(rich) {
-  return (rich || []).map(function (r) {
-    const seg = { t: r.plain_text !== undefined ? r.plain_text : ((r.text && r.text.content) || '') };
-    const a = r.annotations || {};
-    if (a.bold) seg.b = 1;
-    if (a.italic) seg.i = 1;
-    if (a.strikethrough) seg.s = 1;
-    if (a.underline) seg.u = 1;
-    if (a.code) seg.c = 1;
-    const href = r.href || (r.text && r.text.link && r.text.link.url);
-    if (href) seg.h = href;
-    return seg;
-  }).filter(function (s) { return s.t !== ''; });
-}
-
-function fileInfo_(data) {
-  // data = contenu d'un bloc image/video/file/pdf : { type:'file'|'external', file:{url}|external:{url}, caption }
-  if (!data) return { url: '', external: false };
-  if (data.type === 'external') return { url: (data.external || {}).url || '', external: true };
-  return { url: (data.file || {}).url || '', external: false };
-}
+// rich_to_segments_ et fileInfo_ sont définis dans Code.gs (le contenu des missions s'en sert aussi).
 
 function fetchMethodBlocks_(blockId, depth, budget) {
   const out = [];
@@ -454,6 +434,23 @@ function getMethodMedia_(p) {
   return deliverMedia_(mediaSource_(page, p.key, [c.medias, c.support]), p.mode);
 }
 
+// Type MIME fiable : l'hébergeur répond parfois « application/octet-stream » (image alors illisible dans la PWA).
+// On le déduit des premiers octets (JPEG, PNG, GIF, WebP, PDF), sinon de l'extension du nom.
+function mimeOf_(declared, bytes, name) {
+  const d = String(declared || '').split(';')[0].trim().toLowerCase();
+  if (d && d !== 'application/octet-stream' && d !== 'binary/octet-stream') return d;
+  const b = function (i) { return (bytes[i] + 256) % 256; };
+  if (b(0) === 0xff && b(1) === 0xd8) return 'image/jpeg';
+  if (b(0) === 0x89 && b(1) === 0x50 && b(2) === 0x4e && b(3) === 0x47) return 'image/png';
+  if (b(0) === 0x47 && b(1) === 0x49 && b(2) === 0x46) return 'image/gif';
+  if (b(0) === 0x52 && b(1) === 0x49 && b(2) === 0x46 && b(3) === 0x46 && b(8) === 0x57 && b(9) === 0x45) return 'image/webp';
+  if (b(0) === 0x25 && b(1) === 0x50 && b(2) === 0x44 && b(3) === 0x46) return 'application/pdf';
+  const ext = (String(name || '').split('?')[0].match(/\.([A-Za-z0-9]{2,5})$/) || [])[1];
+  const byExt = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', avif: 'image/avif',
+    heic: 'image/heic', heif: 'image/heif', pdf: 'application/pdf', mp4: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm' };
+  return (ext && byExt[ext.toLowerCase()]) || d || 'application/octet-stream';
+}
+
 // Télécharge le fichier (adresse fraîche fournie par Notion) et le renvoie en base64, ou renvoie seulement le lien.
 function deliverMedia_(src, mode) {
   if (!src.url || !/^https:\/\//.test(src.url)) throw new ApiError_('NOT_FOUND', 'Média introuvable');
@@ -465,7 +462,7 @@ function deliverMedia_(src, mode) {
   }
   const blob = res.getBlob();
   const bytes = blob.getBytes();
-  const mime = blob.getContentType() || 'application/octet-stream';
+  const mime = mimeOf_(blob.getContentType(), bytes, src.name || src.url);
   if (bytes.length > METHODS_MEDIA_MAX_BYTES) {
     return { name: src.name, mime: mime, size: bytes.length, tooLarge: true, url: src.url };
   }
@@ -485,9 +482,7 @@ function stamp_() {
   return Utilities.formatDate(new Date(Date.now()), TZ, 'dd/MM/yyyy HH:mm');
 }
 
-function cleanName_(s) {
-  return String(s || '').replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
-}
+// cleanName_ (nom d'auteur : texte ou { firstName, lastName }) est défini dans Report.gs : UNE seule définition dans tout le projet.
 
 function parseComments_(text) {
   return String(text || '').split(/\n{2,}/).map(function (block) {

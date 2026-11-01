@@ -6,7 +6,7 @@
 //   · champs obligatoires manquants (bloquent « Valider le CR »).
 //  L'état replié / masqué est propre à l'appareil (voir loadViewPrefs).
 // ============================================================================
-import { isFilled } from './shared.js'
+import { isFilled, LIST_STYLES } from './shared.js'
 
 const isField = (it) => it.k === 'field'
 
@@ -63,6 +63,19 @@ export function buildOutline(items, ctx) {
   const filled = fields.filter(filledOf).length
   const missing = fields.filter((f) => f.required && !filledOf(f))
   return { rows, total, filled, missing }
+}
+
+// Lignes de liste à puces / numérotée consécutives → un seul bloc { k:'list', id, rows } (un <ul> dans l'écran).
+export function groupLists(rows) {
+  const out = []
+  for (const r of rows) {
+    if (r.k === 'text' && LIST_STYLES.includes(r.item.style)) {
+      const last = out[out.length - 1]
+      if (last && last.k === 'list') last.rows.push(r)
+      else out.push({ k: 'list', id: 'LST:' + r.id, rows: [r] })
+    } else out.push(r)
+  }
+  return out
 }
 
 // Menu « aller à… » : sections H1/H2 avec avancement.
