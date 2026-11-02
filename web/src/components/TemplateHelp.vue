@@ -23,7 +23,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         <details open class="hp__sec">
           <summary>Comment ça marche</summary>
           <ol>
-            <li>Tapez la référence de la mission (par exemple <strong>FI-252</strong>) et ouvrez-la : son template s’affiche, bloc par bloc.</li>
+            <li>Tapez la référence d’une mission déjà créée (par exemple <strong>FI-252</strong>) et ouvrez-la : son template s’affiche, bloc par bloc. Si la page est vide, vous partez de zéro.</li>
             <li>Ajoutez des éléments avec le menu de droite, écrivez-les, déplacez-les avec les flèches.</li>
             <li><strong>Enregistrer dans Notion</strong> : la page de la mission est mise à jour. Les techniciens voient le changement en appuyant sur « Actualiser » dans la fiche.</li>
           </ol>
@@ -61,7 +61,34 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
         <details class="hp__sec">
           <summary>Reprendre un template existant</summary>
-          <p>Le bouton <strong>Reprendre</strong> copie les éléments d’une autre mission à la suite de ceux-ci. Les images et fichiers ne sont pas copiés. Rien n’est enregistré tant que vous n’appuyez pas sur « Enregistrer ».</p>
+          <p>Le bouton <strong>Reprendre</strong> va chercher le template d’une autre mission. Vous choisissez de l’<strong>ajouter à la suite</strong> de ce qui est déjà là ou de <strong>tout remplacer</strong>. Les images et fichiers ne sont pas copiés. Rien n’est enregistré tant que vous n’appuyez pas sur « Enregistrer ».</p>
+        </details>
+
+        <details class="hp__sec">
+          <summary>Passer en mode « Code »</summary>
+          <p>Le bouton <strong>Code</strong>, en haut de la page, affiche le même template sous forme de texte. Vous pouvez y écrire, y coller un template, puis revenir à <strong>Sans code</strong> : les deux modes montrent toujours la même chose.</p>
+          <pre class="hp__code"># Titre de section (# ## ###)
+Un paragraphe de consigne
+- Une puce
+1. Un numéro
+&gt; Une citation
+&gt; [!callout] Un encadré
+- [ ] Une case à cocher
+---   (séparateur)
+
+```json
+{ "type": "text", "id": "serie", "label": "N° de série", "required": true }
+```
+```html
+&lt;p&gt;Bloc HTML libre&lt;/p&gt;
+```</pre>
+          <ul>
+            <li>Un bloc <code>json</code> peut contenir un champ ou une liste de champs. Types : {{ FIELD_KINDS.map((k) => k.type).join(', ') }}.</li>
+            <li>Une ligne qui commence par deux espaces prolonge le texte au-dessus. Un <code>\</code> en début de ligne affiche le texte tel quel.</li>
+            <li>La ligne <code>&lt;!-- 🔒 … --&gt;</code> est une image, un PDF ou un tableau de Notion : laissez-la (ou supprimez-la pour retirer le bloc).</li>
+            <li>Les erreurs s’affichent sous le texte, avec le numéro de ligne. Tant qu’il y en a, vous ne pouvez ni enregistrer ni repasser en mode sans code.</li>
+            <li>La mise en forme interne d’une consigne (gras, couleurs) n’apparaît pas en code mais reste intacte tant que son texte ne change pas.</li>
+          </ul>
         </details>
 
         <details class="hp__sec">
@@ -71,7 +98,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
             <li>Une page sans contenu reçoit un bloc déroulant « Template CR intervention » qui range le formulaire au-dessus du rapport.</li>
             <li>Un bloc supprimé par erreur se retrouve dans la corbeille de Notion.</li>
             <li>Un bloc qui contient des sous-blocs ne peut pas être déplacé d’ici : son texte seul est modifiable.</li>
-            <li>Pour des cas très particuliers, les templates peuvent toujours s’écrire à la main dans Notion (voir le dossier <code>docs/templates</code>).</li>
+            <li>Les templates peuvent toujours s’écrire directement dans Notion (voir le dossier <code>docs/templates</code>) : le mode « Code » utilise la même écriture.</li>
           </ul>
         </details>
       </aside>
@@ -93,5 +120,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 .hp__sec ul, .hp__sec ol { padding-left: 1.2em; }
 .hp__list { list-style: none; padding: 0 !important; }
 .hp__list li { display: flex; gap: var(--s-2); align-items: flex-start; }
+.hp__code { margin: var(--s-2) 0; padding: var(--s-3); overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-2); font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre; }
 .hp__list svg { flex: none; margin-top: 2px; color: var(--accent); }
 </style>

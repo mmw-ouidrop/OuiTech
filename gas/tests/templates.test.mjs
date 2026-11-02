@@ -136,3 +136,18 @@ test('insertion au début impossible : repli à la fin avec avertissement', () =
   assert.equal(r.ok, true, JSON.stringify(r));
   assert.ok(r.data.warnings.some((x) => x.code === 'POSITION_UNSUPPORTED'));
 });
+
+test('options avancées (help, max…) : lues, écrites sur un nouveau champ, retirables', () => {
+  const w = world(true);
+  w.seedChildren(PAGE, [json({ type: 'image_upload', id: 'p', label: 'Photos', help: 'Vue d’ensemble', max: 6 })]);
+  const items = get(w).data.items;
+  assert.deepEqual(items[0].extra, { help: 'Vue d’ensemble', max: 6 });
+  const neu = { t: 'field', type: 'image_upload', id: 'q', label: 'Autres photos', extra: { help: 'Détails', max: 3, id: 'ignoré' } };
+  items[0].extra = { help: 'Vue d’ensemble' };                       // « max » retiré
+  const r = save(w, [items[0], neu]);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  const [a, b] = w.childrenOf(PAGE).map((x) => JSON.parse(w.text(x)));
+  assert.deepEqual(a, { help: 'Vue d’ensemble', type: 'image_upload', id: 'p', label: 'Photos' });
+  assert.deepEqual(b, { help: 'Détails', max: 3, type: 'image_upload', id: 'q', label: 'Autres photos' });
+  assert.equal(save(w, [{ ...neu, extra: 'x' }]).ok, false);
+});

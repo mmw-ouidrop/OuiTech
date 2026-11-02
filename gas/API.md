@@ -96,7 +96,7 @@ Erreurs : `AUTHOR_REQUIRED`, `BAD_REQUEST`, `NOT_FOUND`, `COMMENTS_FORBIDDEN`, `
 Éditeur de templates de CR (écran « Modèles de CR », fichier `Templates.gs`). Chaque élément du template correspond à un bloc Notion.
 `templateGet&id=<référence>` → `{ pageId, reference, title, url, parentId, container, outside, items:[…] }` : `container` vaut `true` si le template est dans un toggle « Template… »,
 `outside` compte les blocs de la page hors de ce toggle (non modifiables ici). Éléments : `{ ref, t:"section", level, text }`, `{ ref, t:"text", style, text, rt?, … }`,
-`{ ref, t:"todo", text, checked }`, `{ ref, t:"field", type, id, label, required, placeholder, unit, options? }`, `{ ref, t:"divider" }`, `{ ref, t:"html", html }`,
+`{ ref, t:"todo", text, checked }`, `{ ref, t:"field", type, id, label, required, placeholder, unit, options?, extra }` (`extra` : autres clés du JSON du champ, par ex. `help`, `max`, `min` ; renvoyé tel quel, et écrit à l'enregistrement), `{ ref, t:"divider" }`, `{ ref, t:"html", html }`,
 `{ ref, t:"locked", label, text }` (média, tableau… : visible mais jamais réécrit).
 `templateSave` `{ id, items:[…] }` : n'écrit que la différence (blocs modifiés, ajoutés, déplacés, supprimés) → même réponse que `templateGet` +
 `saved:{ created, updated, deleted, moved }` et `warnings:[{ code, message }]`. Un `ref` qui n'existe plus dans Notion (page modifiée entre-temps) → `TEMPLATE_CHANGED`

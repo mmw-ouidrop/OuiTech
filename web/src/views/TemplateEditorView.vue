@@ -7,6 +7,7 @@ import { api } from '../lib/api.js'
 import { online } from '../lib/online.js'
 import { normalizeReference } from '../lib/ref.js'
 import { DEFAULT_PREFIX } from '../config.js'
+import { toCode, fromCode } from '../lib/templateCode.js'
 import { FIELD_KINDS, LAYOUT_KINDS, createItem, duplicateItem, forImport, fromServer, insertAfter, moveItem, removedCount, signature, syncAutoId, toPayload, validateItems } from '../lib/templateEditor.js'
 import NavIcon from '../components/NavIcon.vue'
 import TemplateItemCard from '../components/TemplateItemCard.vue'
@@ -32,8 +33,21 @@ const importRef = ref('')
 const importOpen = ref(false)
 const importMsg = ref('')
 const importing = ref(false)
+const serverItems = ref([])           // blocs tels que Notion les a (pour retrouver les blocs en mode code)
+const MODE_KEY = 'ouidrop.tpl.mode'
+const readMode = () => { try { return localStorage.getItem(MODE_KEY) === 'code' ? 'code' : 'visual' } catch { return 'visual' } }
+const mode = ref(readMode())          // visual | code
+const codeText = ref('')
+const codeErrors = ref([])            // [{ line, message }] : erreurs de syntaxe
+const codeLines = ref([])             // première ligne de chaque élément (pour situer les erreurs de validation)
+const copied = ref(false)
 
 const errors = computed(() => validateItems(items.value))
+// Erreurs du mode code : syntaxe, puis règles du template, avec le numéro de ligne.
+const codeProblems = computed(() => {
+  if (codeErrors.value.length) return codeErrors.value
+  return items.value.map((it, n) => (errors.value[it.key] ? { line: codeLines.value[n] || 1, message: errors.value[it.key] } : null)).filter(Boolean)
+})
 const errorCount = computed(() => Object.keys(errors.value).length)
 const dirty = computed(() => state.value === 'ready' && signature(items.value) !== baseline.value)
 const removed = computed(() => removedCount(original.value, items.value))
@@ -42,7 +56,40 @@ function adopt(data) {
   mission.value = { reference: data.reference, title: data.title, url: data.url, container: data.container, outside: data.outside }
   items.value = fromServer(data.items)
   original.value = data.items.map((i) => ({ ref: i.ref }))
+  serverItems.value = fromServer(data.items)
   baseline.value = signature(items.value)
+  codeErrors.value = []
+  if (mode.value === 'code') showCode()
+}
+
+function showCode() {
+  codeText.value = toCode(items.value)
+  codeErrors.value = []
+  codeLines.value = fromCode(codeText.value, serverItems.value).lines
+}
+
+// Frappe dans le code : relu à chaque modification ; les éléments ne changent que si le code est valide.
+function onCode() {
+  saveMsg.value = ''
+  const r = fromCode(codeText.value, serverItems.value)
+  codeErrors.value = r.errors
+  codeLines.value = r.lines
+  if (!r.errors.length) items.value = r.items
+}
+
+async function setMode(m) {
+  if (m === mode.value) return
+  if (m === 'visual' && codeErrors.value.length) {
+    if (!window.confirm('Le code contient des erreurs : repasser en mode sans code abandonne ces dernières modifications. Continuer ?')) return
+  }
+  mode.value = m
+  try { localStorage.setItem(MODE_KEY, m) } catch { /* mode non mémorisé */ }
+  if (m === 'code') showCode()
+  else codeErrors.value = []
+}
+
+async function copyCode() {
+  try { await navigator.clipboard.writeText(codeText.value); copied.value = true; setTimeout(() => (copied.value = false), 1800) } catch { copied.value = false }
 }
 
 async function open(refText) {
@@ -93,6 +140,7 @@ function remove(item) {
 
 async function save() {
   showErrors.value = true
+  if (mode.value === 'code' && codeProblems.value.length) return
   if (errorCount.value) {
     const firstKey = items.value.find((i) => errors.value[i.key])
     const el = firstKey && document.querySelector(`[data-key="${firstKey.key}"]`)
@@ -123,15 +171,19 @@ async function save() {
   }
 }
 
-async function doImport() {
+async function doImport(replace) {
   const reference = normalizeReference(importRef.value, DEFAULT_PREFIX)
   if (!reference) { importMsg.value = 'Indiquez une référence, par exemple FI-240.'; return }
   importing.value = true; importMsg.value = ''
   try {
     const data = await api.templateGet(reference)
-    const added = forImport(data.items, items.value)
+    if (replace && items.value.length && !window.confirm('Remplacer tout le template de cette mission par celui de ' + data.reference + ' ? Les blocs actuels seront supprimés de Notion à l’enregistrement.')) return
+    // « Remplacer » : les blocs d'images, fichiers… de cette page restent (ils ne se copient pas) ; on ne retire que le reste.
+    const keep = replace ? items.value.filter((i) => i.t === 'locked') : items.value
+    const added = forImport(data.items, replace ? [] : items.value)
     const skipped = data.items.length - added.length
-    items.value = items.value.concat(added)
+    items.value = replace ? added.concat(keep) : items.value.concat(added)
+    if (mode.value === 'code') showCode()
     importMsg.value = `${added.length} élément${added.length > 1 ? 's' : ''} repris de ${data.reference}` + (skipped ? ` (${skipped} média${skipped > 1 ? 's' : ''} ou bloc${skipped > 1 ? 's' : ''} verrouillé${skipped > 1 ? 's' : ''} non copié${skipped > 1 ? 's' : ''})` : '') + '. Pensez à enregistrer.'
     importRef.value = ''
     importOpen.value = false
@@ -155,6 +207,10 @@ watch(() => props.reference, (r) => { if (r && mission.value && r !== mission.va
   <section class="te">
     <header class="te__top">
       <h2 class="te__title">Modèles de CR</h2>
+      <div class="te__mode" role="group" aria-label="Mode d’édition">
+        <button type="button" class="te__seg" :class="{ 'te__seg--on': mode === 'visual' }" :aria-pressed="mode === 'visual'" @click="setMode('visual')"><NavIcon name="edit" :size="18" /> Sans code</button>
+        <button type="button" class="te__seg" :class="{ 'te__seg--on': mode === 'code' }" :aria-pressed="mode === 'code'" @click="setMode('code')"><NavIcon name="code" :size="18" /> Code</button>
+      </div>
       <button type="button" class="te__icon" aria-label="Aide : préparer un template" title="Aide" @click="showHelp = true"><NavIcon name="help" :size="26" /></button>
     </header>
 
@@ -167,7 +223,7 @@ watch(() => props.reference, (r) => { if (r && mission.value && r !== mission.va
     <p v-if="state === 'error'" class="alert te__gap" role="alert">{{ error }}</p>
 
     <p v-if="state === 'idle'" class="te__empty muted">
-      Ouvrez la mission dont vous voulez préparer le compte rendu. Besoin d’un coup de main ? Touchez le <strong>?</strong> en haut à droite.
+      Ouvrez la mission dont vous voulez préparer le compte rendu : le template d’une fiche déjà créée se modifie, une page vide se remplit de zéro, et vous pouvez aussi reprendre le template d’une autre mission. Besoin d’un coup de main ? Touchez le <strong>?</strong> en haut à droite.
     </p>
 
     <template v-if="state === 'ready' && mission">
@@ -179,17 +235,18 @@ watch(() => props.reference, (r) => { if (r && mission.value && r !== mission.va
         </div>
         <div class="te__actions">
           <button type="button" class="btn btn--ghost te__b" @click="importOpen = !importOpen"><NavIcon name="import" :size="18" /> Reprendre</button>
-          <button type="button" class="btn te__b" :disabled="saving || !online || !dirty" @click="save">
+          <button type="button" class="btn te__b" :disabled="saving || !online || !dirty || (mode === 'code' && codeProblems.length > 0)" @click="save">
             <NavIcon name="save" :size="18" /> {{ saving ? 'Enregistrement…' : 'Enregistrer dans Notion' }}
           </button>
         </div>
       </div>
 
-      <form v-if="importOpen" class="te__import card te__gap" @submit.prevent="doImport">
-        <label for="te-imp" class="small">Copier les éléments d’une autre mission, à la suite de ceux-ci :</label>
-        <div class="te__open">
+      <form v-if="importOpen" class="te__import card te__gap" @submit.prevent="doImport(false)">
+        <label for="te-imp" class="small">Reprendre le template d’une autre mission :</label>
+        <div class="te__open te__open--wrap">
           <input id="te-imp" v-model="importRef" class="input te__ref" placeholder="Référence, par exemple FI-240" autocomplete="off" autocapitalize="characters" />
-          <button type="submit" class="btn btn--ghost" :disabled="importing">{{ importing ? 'Lecture…' : 'Reprendre' }}</button>
+          <button type="submit" class="btn btn--ghost" :disabled="importing || !online">{{ importing ? 'Lecture…' : 'Ajouter à la suite' }}</button>
+          <button type="button" class="btn btn--ghost" :disabled="importing || !online" @click="doImport(true)">Tout remplacer</button>
         </div>
       </form>
       <p v-if="importMsg" class="note small te__gap" role="status">{{ importMsg }}</p>
@@ -199,11 +256,14 @@ watch(() => props.reference, (r) => { if (r && mission.value && r !== mission.va
       <p v-if="mission.outside" class="note small te__gap">
         {{ mission.outside }} bloc{{ mission.outside > 1 ? 's' : '' }} de la page se trouve{{ mission.outside > 1 ? 'nt' : '' }} en dehors du toggle « Template » : à modifier dans Notion.
       </p>
-      <p v-if="showErrors && errorCount" class="alert te__gap" role="alert">{{ errorCount }} élément{{ errorCount > 1 ? 's' : '' }} à corriger avant d’enregistrer (signalé{{ errorCount > 1 ? 's' : '' }} en dessous).</p>
+      <p v-if="showErrors && errorCount && mode === 'visual'" class="alert te__gap" role="alert">{{ errorCount }} élément{{ errorCount > 1 ? 's' : '' }} à corriger avant d’enregistrer (signalé{{ errorCount > 1 ? 's' : '' }} en dessous).</p>
 
-      <div class="te__cols te__gap">
+      <div v-if="mode === 'visual'" class="te__cols te__gap">
         <ol class="te__list" aria-label="Éléments du template">
-          <li v-if="!items.length" class="te__none card">Le template est vide. Ajoutez un premier élément avec le menu « Ajouter ».</li>
+          <li v-if="!items.length" class="te__none card">
+            <p><strong>Ce template est vide.</strong> Partez de zéro avec le menu « Ajouter », ou reprenez celui d’une autre mission.</p>
+            <p class="te__row"><button type="button" class="btn btn--ghost te__b" @click="importOpen = true"><NavIcon name="import" :size="18" /> Reprendre un template existant</button></p>
+          </li>
           <li v-for="(it, i) in items" :key="it.key" :data-key="it.key">
             <TemplateItemCard
               :item="it" :first="i === 0" :last="i === items.length - 1" :selected="selectedKey === it.key" :error="showErrors || it.ref ? errors[it.key] || '' : ''"
@@ -225,6 +285,21 @@ watch(() => props.reference, (r) => { if (r && mission.value && r !== mission.va
           </div>
         </aside>
       </div>
+
+      <section v-else class="te__code te__gap" aria-label="Template en code">
+        <textarea
+          v-model="codeText" class="input te__area" :class="{ 'te__area--err': codeProblems.length }" spellcheck="false" autocomplete="off" autocapitalize="off"
+          aria-label="Code du template" aria-describedby="te-code-state" @input="onCode"
+        ></textarea>
+        <div id="te-code-state" class="te__state" role="status">
+          <p v-if="!codeProblems.length" class="note small">✓ Code valide · {{ items.length }} élément{{ items.length > 1 ? 's' : '' }}{{ dirty ? ' · modifications à enregistrer' : '' }}</p>
+          <ul v-else class="alert small te__warn" role="alert">
+            <li v-for="(p, i) in codeProblems.slice(0, 8)" :key="i"><strong>Ligne {{ p.line }}</strong> : {{ p.message }}</li>
+            <li v-if="codeProblems.length > 8">… et {{ codeProblems.length - 8 }} autre{{ codeProblems.length - 8 > 1 ? 's' : '' }}.</li>
+          </ul>
+          <button type="button" class="btn btn--ghost te__b" @click="copyCode"><NavIcon name="copy" :size="18" /> {{ copied ? 'Copié' : 'Copier le code' }}</button>
+        </div>
+      </section>
     </template>
 
     <TemplateHelp v-if="showHelp" @close="showHelp = false" />
@@ -234,6 +309,17 @@ watch(() => props.reference, (r) => { if (r && mission.value && r !== mission.va
 <style scoped>
 .te__top { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); margin-bottom: var(--s-3); }
 .te__title { margin: 0; }
+.te__mode { display: inline-flex; margin-left: auto; border: 1px solid var(--line-strong); border-radius: 999px; overflow: hidden; background: var(--surface); }
+.te__seg { display: inline-flex; align-items: center; gap: var(--s-2); min-height: 40px; padding: 0 var(--s-4); border: 0; background: transparent; color: var(--accent); font: 600 var(--fs-small)/1 var(--f-body); cursor: pointer; }
+.te__seg--on { background: var(--accent); color: var(--surface); }
+.te__seg:not(.te__seg--on):hover { background: var(--surface-2); }
+.te__open--wrap { flex-wrap: wrap; }
+.te__row { margin: var(--s-2) 0 0; }
+.te__code { display: grid; gap: var(--s-3); }
+.te__area { width: 100%; min-height: 55vh; padding: var(--s-3); font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; tab-size: 2; white-space: pre; overflow: auto; resize: vertical; }
+.te__area--err { border-color: var(--danger); }
+.te__state { display: grid; gap: var(--s-2); justify-items: start; }
+.te__state > * { margin: 0; max-width: 100%; }
 .te__icon { display: grid; place-items: center; width: var(--tap); height: var(--tap); border: 2px solid var(--accent); border-radius: 999px; background: transparent; color: var(--accent); cursor: pointer; }
 .te__icon:hover { background: var(--surface-2); color: var(--heading); }
 .te__gap { margin-top: var(--s-3); }

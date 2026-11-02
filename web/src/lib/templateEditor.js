@@ -62,7 +62,7 @@ export function createItem(kind, items = []) {
   if (kind === 'note') return { key, t: 'text', style: 'paragraph', text: '' }
   if (kind === 'divider') return { key, t: 'divider' }
   if (kind === 'html') return { key, t: 'html', html: '' }
-  const f = { key, t: 'field', type: kind, id: '', label: '', required: false, placeholder: '', unit: '', idAuto: true }
+  const f = { key, t: 'field', type: kind, id: '', label: '', required: false, placeholder: '', unit: '', extra: {}, idAuto: true }
   if (CHOICE_TYPES.includes(kind)) f.options = ['', '']
   return f
 }
@@ -172,6 +172,7 @@ export function toPayload(items) {
     else if (i.t === 'field') {
       Object.assign(out, { type: i.type, id: i.id, label: i.label, required: !!i.required, placeholder: i.placeholder || '', unit: i.unit || '' })
       if (CHOICE_TYPES.includes(i.type)) out.options = optionsClean(i.options)
+      out.extra = i.extra || {}
     } else if (i.t === 'locked') out.label = i.label
     return out
   })

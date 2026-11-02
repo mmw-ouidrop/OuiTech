@@ -16,7 +16,7 @@
  *    { t:'section', level:1|2|3, text }
  *    { t:'text', style:'paragraph'|'bulleted_list'|'numbered_list'|'quote'|'callout', text, rich? }
  *    { t:'todo', text }                                     case à cocher native de Notion
- *    { t:'field', type, id, label, options?, required?, placeholder?, unit? }      bloc de code json
+ *    { t:'field', type, id, label, options?, required?, placeholder?, unit?, extra? }      bloc de code json (`extra` : autres clés du JSON : help, max…)
  *    { t:'divider' }   { t:'html', html }
  *    { t:'locked', label, preview }                         image, vidéo, PDF, tableau… : se gère dans Notion, jamais modifié ici
  *  `fixed:true` : le bloc contient des sous-blocs ; son texte se modifie, mais il n'est jamais recréé (donc pas déplacé).
@@ -63,6 +63,13 @@ function tplParseField_(text) {
   return null;
 }
 
+// Clés du JSON d'un champ que l'éditeur n'a pas en case dédiée (help, max, min…) : visibles en mode « code ».
+function tplExtraOf_(o) {
+  const x = {};
+  Object.keys(o).forEach(function (k) { if (TPL_FIELD_KEYS.indexOf(k) === -1) x[k] = o[k]; });
+  return x;
+}
+
 function tplLocked_(b, label, preview) {
   return { t: 'locked', ref: plainId_(b.id), label: label, preview: shorten_(preview || '', 120) };
 }
@@ -87,7 +94,8 @@ function tplItemOf_(b) {
     if (!o) return tplLocked_(b, 'Champs (JSON)', text);
     return { t: 'field', ref: ref, type: o.type, id: o.id, label: o.label === undefined ? '' : String(o.label),
       options: Array.isArray(o.options) ? o.options.map(String) : undefined, required: o.required === true,
-      placeholder: typeof o.placeholder === 'string' ? o.placeholder : '', unit: typeof o.unit === 'string' ? o.unit : '' };
+      placeholder: typeof o.placeholder === 'string' ? o.placeholder : '', unit: typeof o.unit === 'string' ? o.unit : '',
+      extra: tplExtraOf_(o) };
   }
   const cap = d.caption ? plain_(d.caption) : '';
   const url = d.url || (d.external && d.external.url) || '';
@@ -127,6 +135,14 @@ function tplFail_(n, message) {
 
 function tplText_(v, max) {
   return String(v == null ? '' : v).replace(/\r/g, '').slice(0, max);
+}
+
+function tplCleanExtra_(x, n) {
+  if (!x || typeof x !== 'object' || Array.isArray(x)) tplFail_(n, 'options avancées invalides');
+  const out = {};
+  Object.keys(x).forEach(function (k) { if (TPL_FIELD_KEYS.indexOf(k) === -1) out[k] = x[k]; });
+  if (Object.keys(out).length > 20 || JSON.stringify(out).length > 2000) tplFail_(n, 'options avancées trop longues');
+  return out;
 }
 
 function tplCleanItems_(raw, ctx) {
@@ -187,6 +203,7 @@ function tplCleanItems_(raw, ctx) {
         out.required = it.required === true;
         out.placeholder = tplText_(it.placeholder, 100).trim();
         out.unit = tplText_(it.unit, 20).trim();
+        if (it.extra !== undefined) out.extra = tplCleanExtra_(it.extra, n);
         break;
       }
       case 'divider':
@@ -209,7 +226,9 @@ function tplCleanItems_(raw, ctx) {
 
 function tplFieldJson_(it, original) {
   const o = {};
-  Object.keys(original || {}).forEach(function (k) { if (TPL_FIELD_KEYS.indexOf(k) === -1) o[k] = original[k]; });   // clés propres au responsable, conservées
+  // clés propres au responsable (help, max…) : celles envoyées par l'éditeur, à défaut celles du bloc existant
+  const extra = it.extra !== undefined ? it.extra : tplExtraOf_(original || {});
+  Object.keys(extra).forEach(function (k) { if (TPL_FIELD_KEYS.indexOf(k) === -1) o[k] = extra[k]; });
   o.type = it.type;
   o.id = it.id;
   o.label = it.label;
