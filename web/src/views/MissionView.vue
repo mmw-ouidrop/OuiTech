@@ -19,7 +19,8 @@ import { online } from '../lib/online.js'
 import { DEFAULT_PREFIX } from '../config.js'
 import { buildItems, effectiveStatus, fieldValue } from '../lib/shared.js'
 import { buildOutline, groupLists, jumpTargets, loadViewPrefs, saveViewPrefs, setAllCollapsed, ancestorSections } from '../lib/outline.js'
-import { named, displayName, watch as watchSync } from '../lib/session.js'
+import { named, displayName, hasRole, watch as watchSync } from '../lib/session.js'
+import NavIcon from '../components/NavIcon.vue'
 import PropertiesPanel from '../components/PropertiesPanel.vue'
 import IdentityCard from '../components/IdentityCard.vue'
 import FieldInput from '../components/FieldInput.vue'
@@ -297,6 +298,9 @@ const headingTag = (level) => 'h' + Math.min(level + 2, 5)
   <template v-else-if="mission">
     <h2 class="m-ref">{{ mission.reference }}</h2>
     <h4 v-if="mission.title" class="m-title">{{ mission.title }}</h4>
+    <p v-if="hasRole('support')" class="m-tpl">
+      <router-link :to="{ name: 'modeles', params: { reference: mission.reference } }" class="m-tpl__link"><NavIcon name="edit" :size="18" /> Modifier le template</router-link>
+    </p>
 
     <IdentityCard mode="gate" class="gap" />
 
@@ -445,6 +449,8 @@ const headingTag = (level) => 'h' + Math.min(level + 2, 5)
 
 <style scoped>
 .m-ref { margin-bottom: var(--s-1); }
+.m-tpl { margin: var(--s-1) 0 0; }
+.m-tpl__link { display: inline-flex; align-items: center; gap: var(--s-2); color: var(--accent); }
 .m-title { margin-bottom: var(--s-4); }
 .gap { margin-top: var(--s-4); }
 .btns { display: flex; flex-wrap: wrap; gap: var(--s-2); align-items: center; }

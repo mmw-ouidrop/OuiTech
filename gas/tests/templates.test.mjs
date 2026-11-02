@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { makeWorld, run, api, PAGE } from './fake-notion.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const FILES = ['Code.gs', 'Report.gs', 'Auth.gs', 'Methods.gs', 'Machines.gs', 'Racks.gs', 'Templates.gs'];
+const FILES = ['Code.gs', 'Report.gs', 'Auth.gs', 'Methods.gs', 'Machines.gs', 'Racks Casiers.gs', 'Templates.gs'];
 const SRC = FILES.map((f) => fs.readFileSync(path.join(here, '..', f), 'utf8'));
 
 function world(empty = false) {

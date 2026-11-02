@@ -1,4 +1,4 @@
-// Racks et casiers KO (Racks.gs) + commentaires de méthodes + carrousel de médias, sur le simulateur de Notion.
+// Racks et casiers KO (Racks Casiers.gs) + commentaires de méthodes + carrousel de médias, sur le simulateur de Notion.
 import test from 'node:test';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { makeWorld, run, api, PNG_B64 } from './fake-notion.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const SRC = ['Code.gs', 'Report.gs', 'Auth.gs', 'Methods.gs', 'Machines.gs', 'Racks.gs'].map((f) => fs.readFileSync(path.join(here, '..', f), 'utf8'));
+const SRC = ['Code.gs', 'Report.gs', 'Auth.gs', 'Methods.gs', 'Machines.gs', 'Racks Casiers.gs'].map((f) => fs.readFileSync(path.join(here, '..', f), 'utf8'));
 const world = () => { const w = makeWorld(); SRC.forEach((s) => run(w.ctx, s)); return w; };
 const t = (s) => [{ plain_text: s }];
 const site = (w, title) => w.addMachine({ props: { Dropper: { type: 'title', title: t(title) } } });
