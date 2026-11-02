@@ -94,7 +94,7 @@ watch(loggedIn, (now) => {
         </p>
       </div>
 
-      <main class="container">
+      <main class="container" :class="{ 'container--wide': route.meta.wide }">
         <router-view />
       </main>
     </div>

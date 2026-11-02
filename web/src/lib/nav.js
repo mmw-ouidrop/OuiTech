@@ -6,6 +6,7 @@ export const NAV = [
   { id: 'machines', to: '/machines', label: 'Machines', icon: 'machine', desc: 'Adresse, Wi-Fi, boîte à clés…', tile: true },
   { id: 'racks', to: '/racks', label: 'Racks et casiers KO', icon: 'rack', desc: 'À diagnostiquer et réparer', tile: true },
   { id: 'inventaires', to: '/inventaires', label: 'Inventaires', icon: 'list', desc: 'Pièces de maintenance par site', tile: true, soon: true },
+  { id: 'modeles', to: '/modeles', label: 'Modèles de CR', icon: 'edit', desc: 'Préparer les templates des comptes rendus', tile: true, minRole: 'support' },
   { id: 'settings', to: '/reglages', label: 'Réglages', icon: 'gear', desc: 'Affichage, nom, session', footer: true }
 ]
 

@@ -314,6 +314,7 @@ export function makeWorld() {
           if (body.position && w.positionMode !== 'both') return err(400, 'body failed validation: body.position should not exist');
           if (body.after && w.positionMode === 'none') return err(400, 'body failed validation: body.after should not exist');
           let at = w.kids[pid].length;
+          if (body.position && body.position.type === 'start') at = 0;
           if (after) {
             at = w.kids[pid].indexOf(key(after));
             if (at < 0) return err(400, 'Could not find the block to insert after');

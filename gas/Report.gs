@@ -100,7 +100,7 @@ function clip_(v, n) {
 }
 
 // Nom d'auteur : texte, ou objet { firstName, lastName } (ou { name }). Définition UNIQUE pour tout le projet (Methods.gs et
-// Racks Casiers.gs l'utilisent aussi) : ne jamais en créer une seconde, la dernière chargée écraserait celle-ci (« [object Object] »).
+// Racks.gs l'utilisent aussi) : ne jamais en créer une seconde, la dernière chargée écraserait celle-ci (« [object Object] »).
 function cleanName_(author) {
   const a = author || {};
   let full = '';

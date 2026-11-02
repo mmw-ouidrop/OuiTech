@@ -91,6 +91,18 @@ en commentaire Notion (facultatif) → `{ state, before }`. `{ action:"rackComme
 « [Nom] texte » → `{ comments }`. Réservés au rôle `support` (`FORBIDDEN_ROLE` sinon) ; `id` rend le rejeu sans effet.
 Erreurs : `AUTHOR_REQUIRED`, `BAD_REQUEST`, `NOT_FOUND`, `COMMENTS_FORBIDDEN`, `CONFIG_INVALID`.
 
+## GET `templateGet` / POST `templateSave` (profil support)
+
+Éditeur de templates de CR (écran « Modèles de CR », fichier `Templates.gs`). Chaque élément du template correspond à un bloc Notion.
+`templateGet&id=<référence>` → `{ pageId, reference, title, url, parentId, container, outside, items:[…] }` : `container` vaut `true` si le template est dans un toggle « Template… »,
+`outside` compte les blocs de la page hors de ce toggle (non modifiables ici). Éléments : `{ ref, t:"section", level, text }`, `{ ref, t:"text", style, text, rt?, … }`,
+`{ ref, t:"todo", text, checked }`, `{ ref, t:"field", type, id, label, required, placeholder, unit, options? }`, `{ ref, t:"divider" }`, `{ ref, t:"html", html }`,
+`{ ref, t:"locked", label, text }` (média, tableau… : visible mais jamais réécrit).
+`templateSave` `{ id, items:[…] }` : n'écrit que la différence (blocs modifiés, ajoutés, déplacés, supprimés) → même réponse que `templateGet` +
+`saved:{ created, updated, deleted, moved }` et `warnings:[{ code, message }]`. Un `ref` qui n'existe plus dans Notion (page modifiée entre-temps) → `TEMPLATE_CHANGED`
+(l'écran invite à rouvrir la mission). Mêmes règles de validation que la lecture d'un template (identifiants uniques, 2 à 20 options, 300 éléments, 100 000 caractères de HTML) → `BAD_REQUEST`.
+Réservé au rôle `support` (`FORBIDDEN_ROLE` sinon). L'intégration Notion doit pouvoir « Modifier le contenu » et « Insérer du contenu ».
+
 ## POST `uploadMedia`
 `{ action, session, fileData (base64 ou data:URL), fileName, mimeType, mediaId, reference }`
 → `{ fileId, name, size, duplicate }`. Idempotent par `mediaId`. Dépose la photo dans
@@ -147,5 +159,5 @@ photoErrors[], photosRemaining, cleanup`.
 ## Codes d'erreur
 `UNAUTHORIZED` · `BAD_REQUEST` · `NOT_FOUND` · `FORBIDDEN` · `AUTHOR_REQUIRED` · `UNSUPPORTED_TYPE` ·
 `MEDIA_NOT_FOUND` · `MEDIA_UNAVAILABLE` · `COLUMN_MISSING` · `CONFIG_INVALID` · `NOTION_FORBIDDEN` · `BUSY` (verrou occupé > 30 s) · `STATE_TOO_LARGE` · `STATE_DESYNC` ·
-`NOTION_ERROR` · `NOTION_UNAVAILABLE` · `NOTION_UPLOAD_FAILED` · `CONFIG_MISSING` · `INTERNAL`.
+`TEMPLATE_CHANGED` · `FORBIDDEN_ROLE` · `NOTION_ERROR` · `NOTION_UNAVAILABLE` · `NOTION_UPLOAD_FAILED` · `CONFIG_MISSING` · `INTERNAL`.
 (`STATE_MISSING` / `STATE_CORRUPT` ne sortent pas : le rapport est alors reconstruit, avec un avertissement.)

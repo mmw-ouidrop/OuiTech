@@ -10,6 +10,7 @@ import MachineView from './views/MachineView.vue'
 import RacksView from './views/RacksView.vue'
 import RackSiteView from './views/RackSiteView.vue'
 import RackSearchView from './views/RackSearchView.vue'
+import TemplateEditorView from './views/TemplateEditorView.vue'
 import SettingsView from './views/SettingsView.vue'
 import ComingSoonView from './views/ComingSoonView.vue'
 import { normalizeReference, consumeUrlReference } from './lib/ref.js'
@@ -37,6 +38,7 @@ export const router = createRouter({
       path: '/inventaires', name: 'inventaires', component: ComingSoonView, meta: { title: 'Inventaires' },
       props: { title: 'Inventaires de sites', text: 'Inventaire des pièces de maintenance stockées sur chaque site. À développer plus tard.' }
     },
+    { path: '/modeles/:reference?', name: 'modeles', component: TemplateEditorView, props: true, meta: { title: 'Modèles de CR', minRole: 'support', wide: true } },
     { path: '/reglages', name: 'settings', component: SettingsView, meta: { title: 'Réglages' } },
     { path: '/:pathMatch(.*)*', redirect: '/' }
   ]

@@ -84,6 +84,7 @@ textarea.input { padding: var(--s-3) var(--s-4); min-height: 120px; line-height:
 
 /* ── Mise en page ── */
 .container { width: min(100% - 2 * var(--s-4), 720px); margin-inline: auto; }
+.container--wide { width: min(100% - 2 * var(--s-4), 1180px); }   /* écrans pensés pour l'ordinateur (éditeur de template) */
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }

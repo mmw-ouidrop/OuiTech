@@ -109,22 +109,13 @@ const LEGACY_REPORT_ICON = '📋';
 const DRIVE_ID_RE = /^[A-Za-z0-9_-]{20,80}$/;   // forme d'un fileId Drive
 const TEMP_RETENTION_DAYS = 14;                  // purge des fichiers de transit orphelins
 
-// Colonnes Notion à ne pas exposer à la PWA. Valeur par défaut ; la propriété de script HIDDEN_PROPERTIES
-// (noms séparés par « | ») la remplace. Un nom par élément ; la casse, les accents et le type d'apostrophe (’ ou ')
-// n'ont pas d'importance. (Une seule chaîne « A|B|C » dans la liste est aussi comprise.)
-const HIDDEN_PROPERTIES = [
-  'Créé au PIC', '🗓️ Planification Interventions', 'Mise en service le', 'Email technicien', 'Temps total (en minutes)',
-  'Missions (OLD)', 'Action OLD', "Photos d'inter 2", 'Créateur', 'État', 'Heure d’envoi'
-];
-// Colonnes à afficher en premier, dans cet ordre. L'API Notion ne documente aucun ordre pour les propriétés d'une
-// page : on le fixe ici (ou par la propriété de script PROPERTY_ORDER, noms séparés par « | »). Les colonnes non
-// citées suivent. Même règle de noms que ci-dessus.
-const PROPERTY_ORDER = [
-  'Technicien', 'Support technique', 'Date d’intervention', 'ID', 'Statut', 'Dropper', 'N° de machine', 'Format Dropper',
-  'Adresse machine', 'Code boite à clé', 'Accès wifi', 'Pièces maintenance', 'Type d’intervention', 'Contexte',
-  'Possibilité de bloquer ?', 'Autres informations', 'Matériel / outillage à prévoir', 'Infos complémentaires',
-  'Heure de début', 'Heure de fin', 'Compte rendu', 'Pièces changées par machine', 'PDF Ouifixit'
-];
+// Colonnes Notion à ne pas exposer à la PWA, et colonnes à afficher en premier (dans cet ordre) : se règlent dans
+// Paramètres du projet ▸ Propriétés du script, avec HIDDEN_PROPERTIES et PROPERTY_ORDER (noms séparés par « | »).
+// Les listes ci-dessous ne servent que de valeur par défaut quand la propriété n'existe pas. Les noms sont comparés sans
+// tenir compte de la casse, des accents ni du type d'apostrophe (’ ou '). L'API Notion ne documente aucun ordre pour les
+// propriétés d'une page : les colonnes non citées dans PROPERTY_ORDER suivent dans l'ordre de Notion.
+const HIDDEN_PROPERTIES = [];
+const PROPERTY_ORDER = [];
 
 // Types de champs que le formulaire sait afficher (voir le mémo de templates).
 const COMPONENT_TYPES = ['text', 'textarea', 'number', 'checkbox', 'radio_group',
@@ -208,6 +199,9 @@ function doGet(e) {
         return ok_(searchRacks_(p));
       case 'rackComments':
         return ok_(getRackComments_(p));
+      case 'templateGet':
+        authorize_(p.session, 'support');
+        return ok_(getTemplate_(p));
       default:
         throw new ApiError_('UNKNOWN_ACTION', 'Action GET inconnue : ' + p.action);
     }
@@ -233,6 +227,9 @@ function doPost(e) {
       case 'rackComment':
         authorize_(body.session, 'support');
         return ok_(postRackComment_(body));
+      case 'templateSave':
+        authorize_(body.session, 'support');
+        return ok_(saveTemplate_(body));
       case 'rackSetState':
         authorize_(body.session, 'support');
         return ok_(postRackState_(body));
