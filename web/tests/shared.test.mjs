@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   effectiveStatus, serverFrozen, isFilled, buildItems, schemaFromTemplate, computeChanges, needsSync,
-  mergeServerState, markAllDirty, restoreMine, dismissConflict, migrateV1Record
+  mergeServerState, markAllDirty, restoreMine, dismissConflict, migrateV1Record, weaveItems, moveTarget, bottomAnchor
 } from '../src/lib/shared.js'
 
 const base = (o = {}) => ({
@@ -214,4 +214,89 @@ test('migration v1 → v2 : valeurs horodatées à envoyer, photos exclues, vali
   assert.equal(m.needsSync, 1)
   assert.deepEqual(m.schema.map((s) => s.id), ['photo', 'n'])
   assert.equal(migrateV1Record({ ...v1, status: 'draft' }).pendingStatus, null)
+})
+
+/* ───────────────────── Champs ajoutés placés dans le formulaire ───────────────────── */
+
+const tpl = [
+  { kind: 'section', level: 1, text: 'NAV', blockId: 's1' },
+  { kind: 'text', style: 'paragraph', text: 'Consigne', blockId: 't1' },
+  { kind: 'component', id: 'e1', type: 'checkbox', label: 'Étape 1', blockId: 'c1' },
+  { kind: 'text', style: 'paragraph', text: 'Note de l’étape 1', blockId: 't2' },
+  { kind: 'component', id: 'e2', type: 'checkbox', label: 'Étape 2', blockId: 'c2' },
+  { kind: 'section', level: 1, text: 'FIN', blockId: 's2' },
+  { kind: 'component', id: 'e3', type: 'text', label: 'Remarque', blockId: 'c3' }
+]
+const cf = (label, after, at, extra = {}) => ({ type: 'text', label, ...(after !== undefined ? { after } : {}), at, ...extra })
+const shape = (rec) => buildItems(rec).map((i) => (i.k === 'field' ? (i.custom ? '+' : '') + (i.label || i.id) : i.k === 'section' ? '#' + i.text : i.k === 'text' ? '“' + i.text : i.k))
+
+test('placement : sous son repère, après les notes qui le suivent, avant le champ suivant', () => {
+  const rec = base({ templateBlocks: tpl, custom: { u_a: cf('A', 'e1', 10) } })
+  assert.deepEqual(shape(rec), ['#NAV', '“Consigne', 'Étape 1', '“Note de l’étape 1', '+A', 'Étape 2', '#FIN', 'Remarque'])
+  // sous une section : après sa consigne, avant son premier champ
+  assert.deepEqual(shape(base({ templateBlocks: tpl, custom: { u_a: cf('A', 's1:x', 1), u_b: cf('B', 'S:s1', 2) } })).slice(0, 4), ['#NAV', '“Consigne', '+B', 'Étape 1'])
+  // « ^ » : tout en haut
+  assert.equal(shape(base({ templateBlocks: tpl, custom: { u_a: cf('A', '^', 1) } }))[0], '+A')
+})
+
+test('placement : le plus récent d’abord sous le même repère, chaînes, bas du formulaire', () => {
+  const rec = base({ templateBlocks: tpl, custom: { u_a: cf('A', 'e2', 10), u_b: cf('B', 'e2', 20), u_c: cf('C', 'u_a', 30) } })
+  assert.deepEqual(shape(rec).slice(4, 9), ['Étape 2', '+B', '+A', '+C', '#FIN'])
+  // un déplacement (mv) fait foi sur la date d'ajout
+  rec.custom.u_a.mv = 99
+  assert.deepEqual(shape(rec).slice(4, 9), ['Étape 2', '+A', '+C', '+B', '#FIN'])
+  // sans repère, ou repère introuvable : sous « Ajouts terrain », par date
+  const legacy = base({ templateBlocks: tpl, custom: { u_x: cf('X', undefined, 5), u_y: cf('Y', 'inconnu', 3) } })
+  assert.deepEqual(shape(legacy).slice(-3), ['#Ajouts terrain', '+Y', '+X'])
+  // boucle (deux déplacements simultanés) : tout reste affiché, en bas
+  const loop = base({ templateBlocks: tpl, custom: { u_p: cf('P', 'u_q', 1), u_q: cf('Q', 'u_p', 2) } })
+  assert.equal(shape(loop).filter((x) => x === '+P' || x === '+Q').length, 2)
+  assert.equal(bottomAnchor(buildItems(rec)), 'e3')
+  assert.equal(bottomAnchor([]), '^')
+})
+
+test('déplacer un champ ajouté : voisin au-dessus / au-dessous, chaîne conservée, bornes', () => {
+  const rec = base({ templateBlocks: tpl, custom: { u_a: cf('A', 'e1', 10) } })
+  const go = (r, id, dir) => moveTarget(buildItems(r), id, dir, r.custom)
+  assert.deepEqual(go(rec, 'u_a', 'down'), { after: 'e2' })          // « Étape 2 » passe au-dessus de A
+  assert.deepEqual(go(rec, 'u_a', 'up'), { after: 'S:s1' })           // A passe devant « Étape 1 »
+  rec.custom.u_a.after = 'S:s1'
+  assert.deepEqual(go(rec, 'u_a', 'up'), { after: '^' })
+  rec.custom.u_a.after = '^'
+  assert.equal(go(rec, 'u_a', 'up'), null, 'déjà tout en haut')
+  // en bas du formulaire : plus de « descendre »
+  const last = base({ templateBlocks: tpl, custom: { u_z: cf('Z', 'e3', 1) } })
+  assert.equal(go(last, 'u_z', 'down'), null)
+  // les champs placés sous lui le suivent
+  const chain = base({ templateBlocks: tpl, custom: { u_a: cf('A', 'e1', 10), u_b: cf('B', 'u_a', 11) } })
+  assert.deepEqual(go(chain, 'u_a', 'down'), { after: 'e2' })
+  const moved = { ...chain, custom: { ...chain.custom, u_a: { ...chain.custom.u_a, after: 'e2', mv: 50 } } }
+  assert.deepEqual(shape(moved).slice(2, 8), ['Étape 1', '“Note de l’étape 1', 'Étape 2', '+A', '+B', '#FIN'])
+  // franchir l'intertitre « Ajouts terrain » : sort de la section
+  const heading = base({ templateBlocks: tpl, custom: { u_x: cf('X', undefined, 1), u_y: cf('Y', undefined, 2) } })
+  assert.deepEqual(go(heading, 'u_x', 'up'), { after: 'e3' })
+  assert.deepEqual(go(heading, 'u_x', 'down'), { after: 'u_y' })
+})
+
+test('synchro : ajout avec repère, déplacement envoyé puis acquitté, déplacement plus récent conservé', () => {
+  const rec = base({ templateBlocks: tpl, custom: { u_a: { ...cf('A', 'e1', 10), dirty: true }, u_b: { ...cf('B', 'e2', 11), mv: 40, moved: true } }, baseRev: 1 })
+  const { changes, sent } = computeChanges(rec)
+  assert.deepEqual(changes.custom.add, [{ id: 'u_a', type: 'text', label: 'A', after: 'e1', at: 10 }])
+  assert.deepEqual(changes.custom.move, [{ id: 'u_b', after: 'e2', at: 40 }])
+  assert.deepEqual(sent.customMove, { u_b: 40 })
+  assert.equal(needsSync(base({ custom: { u_b: { type: 'text', label: 'B', at: 1, moved: true, mv: 2 } } })), true)
+  const serverCustom = [{ id: 'u_a', type: 'text', label: 'A', by: 'Moi', at: 10, after: 'e1' }, { id: 'u_b', type: 'text', label: 'B', by: 'Moi', at: 11, after: 'e2', mv: 41 }]
+  // acquitté : la version du serveur fait foi
+  const ok = mergeServerState(rec, report({ rev: 2, custom: serverCustom }), { sent })
+  assert.equal(ok.patch.custom.u_b.moved, undefined)
+  assert.equal(ok.patch.custom.u_b.mv, 41)
+  // déplacé de nouveau depuis l'envoi : ma position reste et repartira
+  const again = { ...rec, custom: { ...rec.custom, u_b: { ...rec.custom.u_b, after: 'e3', mv: 60 } } }
+  const keep = mergeServerState(again, report({ rev: 2, custom: serverCustom }), { sent })
+  assert.equal(keep.patch.custom.u_b.after, 'e3')
+  assert.equal(keep.patch.custom.u_b.moved, true)
+  // déplacement d'un collègue, rien de local en attente : on le reprend
+  const mine = base({ custom: { u_b: { type: 'text', label: 'B', at: 11, after: 'e2' } } })
+  const theirs = mergeServerState(mine, report({ rev: 3, custom: [{ id: 'u_b', type: 'text', label: 'B', by: 'Sophie', at: 11, after: '^', mv: 70 }] }), {})
+  assert.equal(theirs.patch.custom.u_b.after, '^')
 })

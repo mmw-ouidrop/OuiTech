@@ -79,7 +79,7 @@
 
 // Version du code. `?action=ping` la renvoie : si elle ne correspond pas à celle de l'archive reçue, le déploiement
 // (« Gérer les déploiements ▸ Nouvelle version ») n'a pas été mis à jour.
-const SCRIPT_VERSION = '2026-11-02.1';
+const SCRIPT_VERSION = '2026-11-05.1';
 
 const NOTION_API = 'https://api.notion.com/v1';
 

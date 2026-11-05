@@ -4,6 +4,9 @@
 // Le composant ne stocke rien : il émet `update` ; l'écran enregistre (autosave local).
 import { computed, ref } from 'vue'
 import PhotoField from './PhotoField.vue'
+import NavIcon from './NavIcon.vue'
+import DictationButton from './DictationButton.vue'
+import { mergeText, numberFromSpeech } from '../lib/dictation.js'
 import { formatFieldValue, formatTime, personName } from '../lib/format.js'
 
 const props = defineProps({
@@ -14,9 +17,12 @@ const props = defineProps({
   rows: { type: Array, default: () => [] },         // photos locales (image_upload)
   remote: { type: Array, default: () => [] },       // photos du rapport partagé
   busy: Boolean,
-  by: { type: String, default: '' }                 // dernier à avoir modifié (si ≠ moi)
+  by: { type: String, default: '' },                // dernier à avoir modifié (si ≠ moi)
+  selected: Boolean,                                // champ choisi : un champ ajouté s'insèrera dessous
+  canUp: Boolean,                                   // champ ajouté déplaçable vers le haut
+  canDown: Boolean                                  // … vers le bas
 })
-const emit = defineEmits(['update', 'add-photos', 'remove-photo', 'keep-mine', 'keep-theirs', 'remove-field'])
+const emit = defineEmits(['update', 'add-photos', 'remove-photo', 'keep-mine', 'keep-theirs', 'remove-field', 'select', 'move-field'])
 
 const KNOWN = ['text', 'textarea', 'number', 'checkbox', 'radio_group', 'select', 'checkbox_group', 'date', 'image_upload']
 const type = computed(() => (KNOWN.includes(props.item.type) ? props.item.type : 'text'))
@@ -38,10 +44,25 @@ function onNumber(e) {
 }
 
 const confirmRemove = ref(false)
+
+// Dictée vocale : le texte reconnu s'ajoute à la suite ; un nombre remplace la valeur.
+const interim = ref('')
+const dictMsg = ref('')
+const dictating = ref(false)
+function onDictation(text) {
+  if (type.value === 'number') {
+    const n = numberFromSpeech(text)
+    if (n === null) dictMsg.value = `« ${text} » n’est pas un nombre.`
+    else { dictMsg.value = ''; emit('update', n) }
+    return
+  }
+  dictMsg.value = ''
+  emit('update', mergeText(props.value === undefined || props.value === null ? '' : String(props.value), text))
+}
 </script>
 
 <template>
-  <div class="fld" :class="{ 'fld--conflict': conflict }" :data-field="item.id">
+  <div class="fld" :class="{ 'fld--conflict': conflict, 'fld--sel': selected }" :data-field="item.id" @focusin="emit('select')" @click="emit('select')">
     <!-- Cases à cocher isolées : l'étiquette est la case elle-même -->
     <template v-if="type === 'checkbox'">
       <label class="check check--solo">
@@ -57,20 +78,27 @@ const confirmRemove = ref(false)
         </component>
         <p v-if="item.help" class="small muted fld__help">{{ item.help }}</p>
 
-        <input
-          v-if="type === 'text'" :id="uid" class="input" type="text" :value="value ?? ''" :disabled="disabled"
-          :placeholder="item.placeholder || ''" autocomplete="off" @input="emit('update', $event.target.value)"
-        />
-        <textarea
-          v-else-if="type === 'textarea'" :id="uid" class="input" :value="value ?? ''" :disabled="disabled"
-          :placeholder="item.placeholder || ''" rows="4" @input="emit('update', $event.target.value)"
-        ></textarea>
+        <div v-if="type === 'text'" class="dict">
+          <input
+            :id="uid" class="input" type="text" :value="value ?? ''" :disabled="disabled"
+            :placeholder="item.placeholder || ''" autocomplete="off" @input="emit('update', $event.target.value)"
+          />
+          <DictationButton :disabled="disabled" :label="label" @text="onDictation" @interim="interim = $event" @message="dictMsg = $event" @listening="dictating = $event" />
+        </div>
+        <div v-else-if="type === 'textarea'" class="dict dict--top">
+          <textarea
+            :id="uid" class="input" :value="value ?? ''" :disabled="disabled"
+            :placeholder="item.placeholder || ''" rows="4" @input="emit('update', $event.target.value)"
+          ></textarea>
+          <DictationButton :disabled="disabled" :label="label" @text="onDictation" @interim="interim = $event" @message="dictMsg = $event" @listening="dictating = $event" />
+        </div>
         <div v-else-if="type === 'number'" class="num">
           <input
             :id="uid" class="input" type="text" inputmode="decimal" :value="value ?? ''" :disabled="disabled"
             :placeholder="item.placeholder || ''" autocomplete="off" @input="onNumber"
           />
           <span v-if="item.unit" class="num__unit">{{ item.unit }}</span>
+          <DictationButton :disabled="disabled" :label="label" @text="onDictation" @interim="interim = $event" @message="dictMsg = $event" @listening="dictating = $event" />
         </div>
         <input
           v-else-if="type === 'date'" :id="uid" class="input" type="date" :value="value ?? ''" :disabled="disabled"
@@ -104,6 +132,11 @@ const confirmRemove = ref(false)
       </component>
     </template>
 
+    <p v-if="dictating || interim" class="small dict__live" role="status" aria-live="polite">
+      <span class="dict__dot" aria-hidden="true"></span>{{ interim || 'Je vous écoute… (dites « stop » ou « champ suivant »)' }}
+    </p>
+    <p v-if="dictMsg" class="small dict__msg" role="status">{{ dictMsg }}</p>
+
     <p v-if="by && !conflict" class="small muted fld__by">Modifié par {{ by }}</p>
 
     <!-- Un collègue a modifié ce champ après moi : rien n'est perdu, on choisit -->
@@ -121,6 +154,9 @@ const confirmRemove = ref(false)
 
     <div v-if="item.custom && !disabled" class="custom">
       <span class="small muted">Champ ajouté sur le terrain</span>
+      <span class="custom__tools">
+        <button type="button" class="icon-btn" :disabled="!canUp" aria-label="Monter ce champ" title="Monter" @click.stop="emit('move-field', 'up')"><NavIcon name="up" :size="20" /></button>
+        <button type="button" class="icon-btn" :disabled="!canDown" aria-label="Descendre ce champ" title="Descendre" @click.stop="emit('move-field', 'down')"><NavIcon name="down" :size="20" /></button>
       <button v-if="!confirmRemove" type="button" class="icon-btn" aria-label="Retirer ce champ" title="Retirer ce champ" @click="confirmRemove = true">
         <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3" />
@@ -134,6 +170,7 @@ const confirmRemove = ref(false)
           <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
         </button>
       </span>
+      </span>
     </div>
   </div>
 </template>
@@ -141,11 +178,22 @@ const confirmRemove = ref(false)
 <style scoped>
 .fld { padding: var(--s-3) 0; }
 .fld--conflict { border-left: 6px solid var(--ring); padding-left: var(--s-3); }
+.fld--sel { box-shadow: -4px 0 0 var(--accent); padding-left: var(--s-3); margin-left: var(--s-1); background: color-mix(in srgb, var(--accent) 6%, transparent); border-radius: var(--radius); }
+.custom__tools { display: inline-flex; align-items: center; gap: var(--s-2); }
+.icon-btn:disabled { opacity: .35; cursor: not-allowed; }
 .fld__body { border: 0; margin: 0; padding: 0; min-width: 0; display: grid; gap: var(--s-2); }
 .fld__label { font: 600 var(--fs-small)/1.3 var(--f-body); color: var(--heading); padding: 0; }
 .fld__help { margin: 0; }
 .fld__by { margin: var(--s-1) 0 0; }
 .req { color: var(--text); font-style: normal; font-weight: 700; }
+.dict { display: flex; align-items: center; gap: var(--s-2); }
+.dict--top { align-items: flex-start; }
+.dict .input { flex: 1 1 auto; min-width: 0; }
+.dict__live { display: flex; align-items: center; gap: var(--s-2); margin: var(--s-1) 0 0; color: var(--text); font-style: italic; }
+.dict__dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); animation: dict-blink 1s ease-in-out infinite; }
+@keyframes dict-blink { 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .dict__dot { animation: none; } }
+.dict__msg { margin: var(--s-1) 0 0; color: var(--text); }
 .num { display: flex; align-items: center; gap: var(--s-2); }
 .num .input { flex: 1 1 auto; }
 .num__unit { font-weight: 600; color: var(--text-muted); }

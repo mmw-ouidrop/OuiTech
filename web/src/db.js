@@ -44,10 +44,7 @@
 import Dexie from 'dexie'
 import { uuid } from './lib/uuid.js'
 import { personName } from './lib/format.js'
-import {
-  effectiveStatus, needsSync as computeNeedsSync, mergeServerState, markAllDirty, restoreMine,
-  dismissConflict, migrateV1Record, schemaFromTemplate, V1_OBSOLETE_KEYS
-} from './lib/shared.js'
+import { effectiveStatus, needsSync as computeNeedsSync, mergeServerState, markAllDirty, restoreMine, dismissConflict, migrateV1Record, schemaFromTemplate, V1_OBSOLETE_KEYS, buildItems, bottomAnchor, isAnchorId, moveTarget } from './lib/shared.js'
 
 /* ───────────────────────────────── Erreurs ───────────────────────────────── */
 
@@ -265,7 +262,8 @@ export function createStore(name = 'ouidrop-interventions') {
 
   /* ─────────────────── Champs ajoutés par le technicien ─────────────────── */
 
-  const addCustomField = (id, { type, label, options }) =>
+  // `after` : repère choisi par le technicien (id d'un champ ou d'une section, '^' = tout en haut) ; absent ou introuvable : tout en bas.
+  const addCustomField = (id, { type, label, options, after }) =>
     db.transaction('rw', db.interventions, db.media_queue, async () => {
       const rec = await load(id)
       assertEditable(rec)
@@ -279,7 +277,9 @@ export function createStore(name = 'ouidrop-interventions') {
       }
       if (Object.keys(rec.custom).length >= MAX_CUSTOM_FIELDS) throw new InvalidError('Trop de champs ajoutés (maximum 50).')
       const cid = 'u_' + uuid().replace(/-/g, '').slice(0, 10)
-      const custom = { ...rec.custom, [cid]: { type, label: clean, ...(opts ? { options: opts } : {}), at: now(), dirty: true } }
+      const items = buildItems(rec)
+      const where = after && (isAnchorId(items, after) || rec.custom[after]) ? after : bottomAnchor(items)
+      const custom = { ...rec.custom, [cid]: { type, label: clean, ...(opts ? { options: opts } : {}), after: where, at: now(), dirty: true } }
       await commit(rec, { custom, lastUpdated: now() })
       return cid
     })
@@ -292,11 +292,36 @@ export function createStore(name = 'ouidrop-interventions') {
       if (!c) return
       const custom = { ...rec.custom }
       delete custom[customId]
+      // les champs placés sous celui-ci passent sous son propre repère (le serveur fait de même)
+      for (const [oid, o] of Object.entries(custom)) {
+        if (o.after !== customId) continue
+        const { after: _a, ...rest } = o
+        custom[oid] = c.after ? { ...rest, after: c.after } : rest
+      }
       const fields = { ...rec.fields }
       delete fields[customId]
       const customRemovals = c.dirty ? rec.customRemovals : [...rec.customRemovals, { id: customId, at: now() }]
       await db.media_queue.where('[interventionId+blockId]').equals([id, customId]).delete()
       await commit(rec, { custom, fields, customRemovals, lastUpdated: now() })
+    })
+
+  // Monte (dir « up ») ou descend (« down ») un champ ajouté d'un cran. Renvoie false s'il est déjà au bout.
+  const moveCustomField = (id, customId, dir) =>
+    db.transaction('rw', db.interventions, async () => {
+      const rec = await load(id)
+      assertEditable(rec)
+      const c = rec.custom[customId]
+      if (!c) return false
+      const target = moveTarget(buildItems(rec), customId, dir, rec.custom)
+      if (!target) return false
+      const { after: _a, ...rest } = c
+      const at = now()
+      // pas encore envoyé : la position part avec l'ajout ; déjà au serveur : déplacement à envoyer
+      const moved = c.dirty
+        ? { ...rest, ...(target.after ? { after: target.after } : {}), at }
+        : { ...rest, ...(target.after ? { after: target.after } : {}), mv: at, moved: true }
+      await commit(rec, { custom: { ...rec.custom, [customId]: moved }, lastUpdated: at })
+      return true
     })
 
   /* ──────────────────── Validation / réouverture du CR ──────────────────── */
@@ -544,7 +569,7 @@ export function createStore(name = 'ouidrop-interventions') {
     getRacksOverview, saveRacksOverview, touchRacksOverview, getRacksSite, listRacksSites, saveRacksSite, touchRacksSite, clearRacksCache,
     outboxAdd, outboxList, outboxUpdate, outboxRemove,
     db, getIntervention, listInterventions, findByReference, listPhotos, saveMission, setFields,
-    addPhoto, removePhoto, addCustomField, removeCustomField, setReportStatus, resolveConflict,
+    addPhoto, removePhoto, addCustomField, removeCustomField, moveCustomField, setReportStatus, resolveConflict,
     dismissNotice, listNeedingSync, beginSync, endSync, setPhotoUploaded, failPhoto,
     applySyncResult, applyPull, setEditors, markServerLost, deleteIntervention
   }
@@ -560,7 +585,7 @@ export const {
   getRacksOverview, saveRacksOverview, touchRacksOverview, getRacksSite, listRacksSites, saveRacksSite, touchRacksSite, clearRacksCache,
   outboxAdd, outboxList, outboxUpdate, outboxRemove,
   db, getIntervention, listInterventions, findByReference, listPhotos, saveMission, setFields,
-  addPhoto, removePhoto, addCustomField, removeCustomField, setReportStatus, resolveConflict,
+  addPhoto, removePhoto, addCustomField, removeCustomField, moveCustomField, setReportStatus, resolveConflict,
   dismissNotice, listNeedingSync, beginSync, endSync, setPhotoUploaded, failPhoto,
   applySyncResult, applyPull, setEditors, markServerLost, deleteIntervention
 } = store

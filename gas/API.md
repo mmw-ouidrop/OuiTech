@@ -63,7 +63,8 @@ status         "draft" | "validated"   statusBy, statusAt
 last           { by, at }              dernière personne à avoir modifié
 schema[]       union du template et des éléments retirés depuis (conservés)
 fields         { [id]: { v, at, by, c } }       valeur courante, auteur, heure, appareil
-custom[]       champs ajoutés par les techniciens : { id, type, label, options?, by, at }
+custom[]       champs ajoutés par les techniciens : { id, type, label, options?, after?, mv?, by, at }
+               `after` = repère (id d'un champ ou d'une section, `^` = tout en haut, absent = en bas sous « Ajouts terrain »), `mv` = date du dernier déplacement
 removedCustom  ids supprimés (pour les retirer de l'écran)
 photos         { [componentId]: [ { mediaId, by, at } ] }
 editors[]      autres appareils actifs : { clientId, name, agoSec }
@@ -120,7 +121,10 @@ schema            celui reçu de getIntervention (le client envoie ce qu'il a ; 
 changes: {
   fields:  { [id]: { v, at } }                         at = heure de saisie
   status:  { value:"validated"|"draft", at }
-  custom:  { add:[{id:"u_…", type, label, options?, at}], remove:[{id, at}] }
+  custom:  { add:[{id:"u_…", type, label, options?, after?, at}], move:[{id, after, at}], remove:[{id, at}] }
+           (un champ s'insère sous son repère ; le plus récemment placé d'abord ; repère introuvable ou boucle → en bas ;
+            `move` plus ancien que la position actuelle ou rejoué → ignoré ; supprimer un champ fait remonter ceux placés sous lui ;
+            réponse : `applied.customMoved`. Le bloc Notion est recréé à sa nouvelle place, sauf s'il porte des photos.)
   photos:  { add:[{mediaId, componentId, driveFileId, at}], remove:[{mediaId, at}] }
 }
 ```

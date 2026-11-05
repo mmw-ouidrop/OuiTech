@@ -8,7 +8,7 @@ import { ref, reactive, computed, watch, onUnmounted, nextTick } from 'vue'
 import { liveQuery } from 'dexie'
 import {
   findByReference, saveMission, getIntervention, listPhotos, setFields, addPhoto, removePhoto,
-  addCustomField, removeCustomField, setReportStatus, resolveConflict, dismissNotice
+  addCustomField, removeCustomField, moveCustomField, setReportStatus, resolveConflict, dismissNotice
 } from '../db.js'
 import { api } from '../lib/api.js'
 import { createAutosaver } from '../lib/autosave.js'
@@ -17,7 +17,7 @@ import { normalizeReference } from '../lib/ref.js'
 import { missionStatus, formatDateTime, formatTime, personName } from '../lib/format.js'
 import { online } from '../lib/online.js'
 import { DEFAULT_PREFIX } from '../config.js'
-import { buildItems, effectiveStatus, fieldValue } from '../lib/shared.js'
+import { buildItems, effectiveStatus, fieldValue, moveTarget } from '../lib/shared.js'
 import { buildOutline, groupLists, jumpTargets, loadViewPrefs, saveViewPrefs, setAllCollapsed, ancestorSections } from '../lib/outline.js'
 import { named, displayName, hasRole, watch as watchSync } from '../lib/session.js'
 import NavIcon from '../components/NavIcon.vue'
@@ -194,12 +194,56 @@ async function onAddPhotos(fieldId, files) {
 }
 const onRemovePhoto = (mediaId) => removePhoto(mediaId).catch((e) => (photoError.value = e.message))
 
+// Ajout : sous le champ choisi (`where: 'after'`) ou tout en bas. Le nouveau champ devient le champ choisi : on peut enchaîner.
 async function onAddCustom(def) {
-  const id = await addCustomField(mission.value.id, def)   // lève InvalidError (message lisible)
+  const after = def.where === 'after' && selectedId.value ? selectedId.value : undefined
+  const id = await addCustomField(mission.value.id, { type: def.type, label: def.label, options: def.options, after })   // lève InvalidError (message lisible)
   touched.add(id)
+  selectedId.value = id
   await nextTick()
+  showField(id)
 }
-const onRemoveCustom = (id) => removeCustomField(mission.value.id, id)
+const onRemoveCustom = (id) => {
+  if (selectedId.value === id) selectedId.value = ''
+  return removeCustomField(mission.value.id, id)
+}
+async function onMoveCustom(id, dir) {
+  const moved = await moveCustomField(mission.value.id, id, dir).catch((e) => { photoError.value = e.message || 'Déplacement impossible.'; return false })
+  if (moved) { selectedId.value = id; await nextTick(); showField(id) }
+}
+const canMove = (id, dir) => !!moveTarget(items.value, id, dir, (mission.value && mission.value.custom) || {})
+function showField(id) {
+  const el = document.querySelector(`[data-field="${CSS.escape(id)}"]`)
+  el && el.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+}
+
+/* Emplacement du prochain champ ajouté : le champ touché en dernier ; sans choix, tout en bas.
+   Le bouton flottant n'apparaît que lorsque le formulaire est à l'écran. */
+const selectedId = ref('')
+const selectedItem = computed(() => items.value.find((it) => it.k === 'field' && it.id === selectedId.value) || null)
+const addOpen = ref(false)
+const formEl = ref(null)
+const inForm = ref(false)
+let io = null
+const fabShown = computed(() => inForm.value && !frozen.value && !addOpen.value && state.value === 'ready')
+watch(formEl, (el) => {
+  io && io.disconnect()
+  io = null
+  inForm.value = false
+  if (el && typeof IntersectionObserver !== 'undefined') {
+    io = new IntersectionObserver((entries) => { inForm.value = entries.some((e) => e.isIntersecting) })
+    io.observe(el)
+  } else if (el) {
+    inForm.value = true
+  }
+})
+onUnmounted(() => io && io.disconnect())
+// Un champ qui disparaît (retiré par un collègue, template modifié) n'est plus un repère.
+watch(items, (list) => { if (selectedId.value && !list.some((it) => it.id === selectedId.value)) selectedId.value = '' })
+const openAdd = (fromEnd = false) => {
+  if (fromEnd) selectedId.value = ''
+  addOpen.value = true
+}
 
 async function validate(force = false) {
   await saver.flush()
@@ -371,7 +415,7 @@ const headingTag = (level) => 'h' + Math.min(level + 2, 5)
 
     <p v-if="photoError" class="alert small gap" role="alert">{{ photoError }}</p>
 
-    <form class="card form" novalidate @submit.prevent>
+    <form ref="formEl" class="card form" novalidate @submit.prevent>
       <p v-if="!items.length" class="muted">Ce template ne contient aucun champ.</p>
       <template v-for="r in blocks" :key="r.id">
         <div v-if="r.k === 'section'" class="sec" :class="'sec--' + r.level" :data-section="r.id">
@@ -388,7 +432,9 @@ const headingTag = (level) => 'h' + Math.min(level + 2, 5)
 
         <FieldInput
           v-else-if="r.k === 'field'"
-          :item="r.item" :value="valueOf(r.id)" :disabled="frozen"
+          :item="r.item" :value="valueOf(r.id)" :disabled="frozen" :selected="selectedId === r.id"
+          :can-up="!!r.item.custom && canMove(r.id, 'up')" :can-down="!!r.item.custom && canMove(r.id, 'down')"
+          @select="selectedId = r.id" @move-field="onMoveCustom(r.id, $event)"
           :conflict="mission.conflicts && mission.conflicts[r.id]"
           :rows="rowsBy[r.id] || []" :remote="remoteBy(r.id)" :busy="!!photoBusy[r.id]" :by="byOther(r.id)"
           @update="onUpdate(r.id, $event)"
@@ -413,7 +459,26 @@ const headingTag = (level) => 'h' + Math.min(level + 2, 5)
       </template>
     </form>
 
-    <CustomFieldForm class="gap" :disabled="frozen" :add="onAddCustom" />
+    <section class="card add gap" aria-labelledby="add-title">
+      <h3 id="add-title" class="add__title">Un champ manque ?</h3>
+      <button type="button" class="btn btn--ghost" :disabled="frozen" @click="openAdd(true)">Ajouter un champ</button>
+    </section>
+
+    <CustomFieldForm v-model:open="addOpen" :anchor-label="selectedItem ? (selectedItem.label || selectedItem.id) : ''" :add="onAddCustom" />
+
+    <!-- Bouton flottant : visible tant que l'on parcourt le CR -->
+    <Transition name="fab">
+      <div v-if="fabShown" class="fab" role="group" aria-label="Ajouter un champ au compte rendu">
+        <p v-if="selectedItem" class="fab__where small">
+          <span class="fab__txt">Sous « {{ selectedItem.label || selectedItem.id }} »</span>
+          <button type="button" class="fab__x" aria-label="Ne plus choisir d’emplacement : ajouter tout en bas" title="Ajouter tout en bas" @click="selectedId = ''">✕</button>
+        </p>
+        <button type="button" class="fab__btn" @click="openAdd()">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+          <span>{{ selectedItem ? 'Ajouter ici' : 'Ajouter un champ' }}</span>
+        </button>
+      </div>
+    </Transition>
 
     <!-- Validation -->
     <section class="card done gap" aria-labelledby="done-title">
@@ -449,6 +514,16 @@ const headingTag = (level) => 'h' + Math.min(level + 2, 5)
 
 <style scoped>
 .m-ref { margin-bottom: var(--s-1); }
+.add__title { margin-bottom: var(--s-3); }
+.fab { position: fixed; z-index: 25; right: var(--s-4); bottom: calc(var(--s-4) + env(safe-area-inset-bottom, 0px)); display: grid; justify-items: end; gap: var(--s-2); max-width: calc(100vw - 2 * var(--s-4)); }
+.fab__where { display: inline-flex; align-items: center; gap: var(--s-2); max-width: 100%; margin: 0; padding: var(--s-1) var(--s-1) var(--s-1) var(--s-3); border: 1px solid var(--accent); border-radius: 999px; background: var(--surface); color: var(--text); box-shadow: 0 2px 10px rgba(0, 0, 0, .2); }
+.fab__txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fab__x { flex: none; display: grid; place-items: center; width: 32px; height: 32px; border: 0; border-radius: 999px; background: transparent; color: var(--accent); font-size: 16px; cursor: pointer; }
+.fab__btn { display: inline-flex; align-items: center; gap: var(--s-2); min-height: 56px; padding: 0 var(--s-5); border: 0; border-radius: 999px; background: var(--accent); color: var(--surface); font: 700 var(--fs-body)/1 var(--f-body); box-shadow: 0 4px 14px rgba(0, 0, 0, .3); cursor: pointer; }
+.fab__btn:focus-visible, .fab__x:focus-visible { outline: 3px solid var(--ring); outline-offset: 2px; }
+.fab-enter-active, .fab-leave-active { transition: opacity .15s, transform .15s; }
+.fab-enter-from, .fab-leave-to { opacity: 0; transform: translateY(12px); }
+@media (prefers-reduced-motion: reduce) { .fab-enter-active, .fab-leave-active { transition: none; } }
 .m-tpl { margin: var(--s-1) 0 0; }
 .m-tpl__link { display: inline-flex; align-items: center; gap: var(--s-2); color: var(--accent); }
 .m-title { margin-bottom: var(--s-4); }

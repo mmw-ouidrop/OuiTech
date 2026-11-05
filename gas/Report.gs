@@ -47,7 +47,9 @@
  *    changes: {
  *      fields:  { [id]: { v, at } }                 at = heure de saisie (ms)
  *      status:  { value:"validated"|"draft", at }
- *      custom:  { add:[{id,type,label,options?,at}], remove:[{id,at}] }
+ *      custom:  { add:[{id,type,label,options?,after?,at}], move:[{id,after,at}], remove:[{id,at}] }
+ *               `after` : id du champ (ou de la section) sous lequel le champ s'insère ; '^' = tout en haut ; absent ou '' = en bas,
+ *               dans « Ajouts terrain ». Plusieurs champs sous le même repère : le plus récent d'abord.
  *      photos:  { add:[{mediaId,componentId,driveFileId,at}],
  *                 remove:[{mediaId,at}] }
  *    } }
@@ -241,20 +243,77 @@ function activeCustom_(state) {
     .sort(function (a, b) { return state.custom[a].at - state.custom[b].at || (a < b ? -1 : 1); });
 }
 
-// Ce que le rapport affiche, dans l'ordre : template (union) puis champs ajoutés.
-function renderList_(state) {
-  const items = state.schema.slice();
-  const ids = activeCustom_(state);
-  if (ids.length) {
-    items.push({ k: 's', id: CUSTOM_SECTION_ID, text: CUSTOM_SECTION_TITLE, level: 1 });
-    ids.forEach(function (id) {
-      const c = state.custom[id];
-      const f = { k: 'f', id: id, type: c.type, label: c.label, custom: true };
-      if (c.options) f.options = c.options;
-      items.push(f);
+/* Place les champs ajoutés dans la liste du template (MÊME algorithme que lib/shared.js côté application : à garder identique).
+ *  base     éléments du template, dans l'ordre ({ id, … })
+ *  customs  [{ id, after, at, mv }]  champs ajoutés actifs
+ *  isAnchor(item) : un champ ou une section peut servir de repère (pas un simple texte)
+ *  → liste d'entrées { ref: élément } | { custom: id } | { heading: true } (l'intertitre « Ajouts terrain »)
+ *  Règles : un champ s'insère juste après son repère et après les textes qui suivent ce repère (avant le prochain champ) ;
+ *  plusieurs champs sous le même repère : le plus récemment placé en premier ; un repère introuvable (ou une boucle entre
+ *  deux champs déplacés en même temps) renvoie le champ en bas, sous « Ajouts terrain ». */
+function weaveCustom_(base, customs, isAnchor) {
+  const list = customs.slice().sort(function (a, b) { return a.id < b.id ? -1 : a.id > b.id ? 1 : 0; });
+  const byId = {};
+  list.forEach(function (c) { byId[c.id] = c; });
+  const anchors = {};
+  base.forEach(function (it) { if (isAnchor(it)) anchors[it.id] = true; });
+  const parent = {};
+  list.forEach(function (c) {
+    const a = typeof c.after === 'string' ? c.after : '';
+    parent[c.id] = a === '^' || (a !== c.id && (anchors[a] || byId[a])) ? a : '';
+  });
+  list.forEach(function (c) {          // une boucle est coupée au champ qui la ferme
+    let cur = parent[c.id];
+    for (let n = 0; n <= list.length && cur && byId[cur]; n++) {
+      if (cur === c.id) { parent[c.id] = ''; return; }
+      cur = parent[cur];
+    }
+  });
+  const ord = function (c) { return c.mv || c.at || 0; };
+  const kids = {};
+  list.forEach(function (c) { (kids[parent[c.id]] = kids[parent[c.id]] || []).push(c); });
+  Object.keys(kids).forEach(function (k) {
+    kids[k].sort(function (a, b) {
+      if (k === '') return ord(a) - ord(b) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+      return ord(b) - ord(a) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
     });
+  });
+  const out = [];
+  const emit = function (id) {
+    out.push({ custom: id });
+    (kids[id] || []).forEach(function (k) { emit(k.id); });
+  };
+  (kids['^'] || []).forEach(function (k) { emit(k.id); });
+  let i = 0;
+  while (i < base.length) {
+    const it = base[i++];
+    out.push({ ref: it });
+    if (isAnchor(it)) {
+      while (i < base.length && !isAnchor(base[i])) out.push({ ref: base[i++] });
+      (kids[it.id] || []).forEach(function (k) { emit(k.id); });
+    }
   }
-  return items;
+  if ((kids[''] || []).length) {
+    out.push({ heading: true });
+    kids[''].forEach(function (k) { emit(k.id); });
+  }
+  return out;
+}
+
+// Ce que le rapport affiche, dans l'ordre : template (union) avec les champs ajoutés à leur place.
+function renderList_(state) {
+  const customs = activeCustom_(state).map(function (id) {
+    const c = state.custom[id];
+    return { id: id, after: c.after, at: c.at, mv: c.mv };
+  });
+  return weaveCustom_(state.schema, customs, function () { return true; }).map(function (e) {
+    if (e.ref) return e.ref;
+    if (e.heading) return { k: 's', id: CUSTOM_SECTION_ID, text: CUSTOM_SECTION_TITLE, level: 1 };
+    const c = state.custom[e.custom];
+    const f = { k: 'f', id: e.custom, type: c.type, label: c.label, custom: true };
+    if (c.options) f.options = c.options;
+    return f;
+  });
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -277,12 +336,20 @@ function sameValue_(a, b) {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
+// Repère d'un champ ajouté : id d'un champ ou d'une section, '^' (tout en haut), '' (en bas) ; undefined = invalide.
+function cleanAfter_(v) {
+  if (v === undefined || v === null || v === '') return '';
+  return typeof v === 'string' && /^(\^|[A-Za-z0-9_:.-]{1,130})$/.test(v) ? v : undefined;
+}
+
 function cleanCustom_(it) {
   if (!it || !/^u_[A-Za-z0-9_-]{4,40}$/.test(String(it.id || ''))) return null;
   if (CUSTOM_FIELD_TYPES.indexOf(it.type) === -1) return null;
   const label = clip_(it.label, MAX_LABEL).trim();
   if (!label) return null;
   const out = { id: it.id, type: it.type, label: label };
+  const after = cleanAfter_(it.after);
+  if (after) out.after = after;
   if (it.type === 'radio_group') {
     const o = cleanOptions_(it.options);
     if (!o || o.length < 2) return null;
@@ -458,6 +525,8 @@ function publicState_(state, editors) {
     if (c.del) { removedCustom.push(id); return; }
     const o = { id: id, type: c.type, label: c.label, by: c.by, at: c.at };
     if (c.options) o.options = c.options;
+    if (c.after) o.after = c.after;
+    if (c.mv) o.mv = c.mv;
     custom.push(o);
   });
   custom.sort(function (a, b) { return a.at - b.at; });
@@ -770,7 +839,7 @@ function applyChanges_(c) {
   const reset = isNew && c.baseRev > 0;     // le serveur avait perdu le rapport
 
   let mutated = isNew;
-  const applied = { fields: 0, custom: 0, customRemoved: 0, photos: 0, photosRemoved: 0, status: false };
+  const applied = { fields: 0, custom: 0, customMoved: 0, customRemoved: 0, photos: 0, photosRemoved: 0, status: false };
   const rejected = { fields: [], custom: [], photos: [], status: false, reason: null };
   const overridden = [];
   const changedItems = {};      // id → true : bloc à mettre à jour
@@ -819,8 +888,25 @@ function applyChanges_(c) {
     const at = atCorr_(raw.at, c);
     const rec = { type: it.type, label: it.label, by: c.by, at: at };
     if (it.options) rec.options = it.options;
+    if (it.after) rec.after = it.after;
     state.custom[it.id] = rec;
     applied.custom++;
+    mutated = true;
+    lastAt = Math.max(lastAt, at);
+  });
+  const movedCustom = [];
+  (customOps.move || []).slice(0, 20).forEach(function (raw) {
+    const ex = raw && state.custom[raw.id];
+    if (!ex || ex.del) return;
+    if (frozen) { rejected.custom.push(raw.id); return; }
+    const after = cleanAfter_(raw.after);
+    if (after === undefined || after === raw.id) { warnings.push({ code: 'INVALID_CUSTOM', message: 'Position invalide' }); return; }
+    const at = atCorr_(raw.at, c);
+    if (at <= (ex.mv || ex.at)) return;                                // plus ancien que la position actuelle, ou rejeu
+    if (after) ex.after = after; else delete ex.after;
+    ex.mv = at;
+    movedCustom.push(raw.id);
+    applied.customMoved++;
     mutated = true;
     lastAt = Math.max(lastAt, at);
   });
@@ -830,6 +916,12 @@ function applyChanges_(c) {
     if (!ex || ex.del) return;
     if (frozen) { rejected.custom.push(raw.id); return; }
     const at = atCorr_(raw.at, c);
+    // les champs placés sous celui-ci passent sous son propre repère
+    Object.keys(state.custom).forEach(function (oid) {
+      const o = state.custom[oid];
+      if (o.del || oid === raw.id || o.after !== raw.id) return;
+      if (ex.after) o.after = ex.after; else delete o.after;
+    });
     ex.del = { by: c.by, at: at };
     removedCustom.push(raw.id);
     applied.customRemoved++;
@@ -867,6 +959,16 @@ function applyChanges_(c) {
 
   if (lastAt) state.last = { by: c.by, at: lastAt };
 
+  // Un champ déplacé est recréé à sa nouvelle place (sa valeur est relue de l'état). Avec des photos (enfants du bloc), il reste
+  // où il est dans Notion : seul l'ordre dans l'application change.
+  movedCustom.forEach(function (id) {
+    const e = state.blocks[id];
+    const hasPhotos = Object.keys(state.photos).some(function (m) { return state.photos[m].f === id && !state.photos[m].del; });
+    if (!e || hasPhotos) return;
+    deleteBlockQuiet_(e.b);
+    delete state.blocks[id];
+  });
+
   // 5) Écriture dans Notion — d'abord la structure, puis le contenu
   if (isNew) createReport_(pageId, state, created);
   else if (mutated) {
@@ -883,7 +985,8 @@ function applyChanges_(c) {
       if (state.photos[m].f === id && !state.photos[m].del) state.photos[m].del = { by: c.by, at: lastAt || c.serverNow };
     });
   });
-  if (removedCustom.length && !activeCustom_(state).length && state.blocks[CUSTOM_SECTION_ID]) {
+  if ((removedCustom.length || movedCustom.length) && state.blocks[CUSTOM_SECTION_ID] &&
+      !renderList_(state).some(function (it) { return it.id === CUSTOM_SECTION_ID; })) {
     deleteBlockQuiet_(state.blocks[CUSTOM_SECTION_ID].b);
     delete state.blocks[CUSTOM_SECTION_ID];
   }

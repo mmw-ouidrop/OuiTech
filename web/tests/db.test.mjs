@@ -5,10 +5,11 @@ import assert from 'node:assert/strict'
 import Dexie from 'dexie'
 import {
   db, createStore, saveMission, setFields, addPhoto, removePhoto, listPhotos, findByReference,
-  setReportStatus, addCustomField, removeCustomField, resolveConflict, beginSync, endSync,
+  setReportStatus, addCustomField, removeCustomField, moveCustomField, resolveConflict, beginSync, endSync,
   listNeedingSync, setPhotoUploaded, applySyncResult, applyPull, markServerLost, deleteIntervention,
   getIntervention, dismissNotice, LockedError, InvalidError, NotFoundError, STALE_SYNC_MS
 } from '../src/db.js'
+import { buildItems } from '../src/lib/shared.js'
 
 const mission = (over = {}) => ({
   id: 'page-1', reference: 'FI-252', title: 'Compteur',
@@ -115,6 +116,42 @@ test('champs ajoutés : validation, ajout, suppression locale ou demandée au se
   assert.equal((await getIntervention('page-1')).custom[b].dirty, undefined, 'acquitté')
   await removeCustomField('page-1', b)                               // déjà au serveur : retrait demandé
   assert.deepEqual((await getIntervention('page-1')).customRemovals.map((r) => r.id), [b])
+})
+
+test('champs ajoutés : placés sous le champ choisi (ou en bas), déplacés, acquittés, retirés', async () => {
+  await saveMission(mission())
+  const ids = async () => buildItems(await getIntervention('page-1')).filter((i) => i.k === 'field').map((i) => i.label || i.id)
+  // sans choix : tout en bas (sous le dernier champ) ; avec choix : sous ce champ
+  const a = await addCustomField('page-1', { type: 'text', label: 'A' })
+  assert.equal((await getIntervention('page-1')).custom[a].after, 'notes')
+  const b = await addCustomField('page-1', { type: 'text', label: 'B', after: 'photo_compteur' })
+  assert.deepEqual(await ids(), ['Photo', 'B', 'Notes', 'A'])
+  const c = await addCustomField('page-1', { type: 'text', label: 'C', after: b })
+  assert.deepEqual(await ids(), ['Photo', 'B', 'C', 'Notes', 'A'])
+  // repère inconnu : tout en bas
+  const d = await addCustomField('page-1', { type: 'text', label: 'D', after: 'nexiste-pas' })
+  assert.equal((await getIntervention('page-1')).custom[d].after, a, 'sous le dernier champ (A)')
+  // déplacement d'un champ pas encore envoyé : la position part avec l'ajout
+  assert.equal(await moveCustomField('page-1', c, 'down'), true)
+  let rec = await getIntervention('page-1')
+  assert.equal(rec.custom[c].moved, undefined)
+  assert.equal(rec.custom[c].dirty, true)
+  assert.deepEqual(await ids(), ['Photo', 'B', 'Notes', 'C', 'A', 'D'])
+  assert.equal(await moveCustomField('page-1', b, 'up'), true)
+  assert.equal(await moveCustomField('page-1', b, 'up'), false, 'déjà tout en haut')
+  assert.equal((await getIntervention('page-1')).custom[b].after, '^')
+  // acquitté par le serveur, puis déplacé : déplacement à envoyer
+  await applySyncResult('page-1', sentOf({ customAdd: [a, b, c, d] }), result({ report: report({ rev: 2, custom: [a, b, c, d].map((id, i) => ({ id, type: 'text', label: id, by: 'Moi', at: 1 + i, ...(rec.custom[id].after ? { after: rec.custom[id].after } : {}) })) }) }))
+  rec = await getIntervention('page-1')
+  assert.equal(await moveCustomField('page-1', a, 'up'), true)
+  rec = await getIntervention('page-1')
+  assert.equal(rec.custom[a].moved, true)
+  assert.ok(rec.custom[a].mv > 0)
+  assert.equal(rec.needsSync, 1)
+  // retrait d'un champ : ceux placés sous lui passent sous son propre repère
+  const e = await addCustomField('page-1', { type: 'text', label: 'E', after: c })
+  await removeCustomField('page-1', c)
+  assert.equal((await getIntervention('page-1')).custom[e].after, 'notes', 'sous le repère de C (qui était sous « Notes »)')
 })
 
 test('valider / rouvrir : demandes horodatées, idempotentes, annulables', async () => {

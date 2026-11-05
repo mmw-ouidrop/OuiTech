@@ -397,6 +397,96 @@ test('champs ajoutés : section « Ajouts terrain », valeur, suppression douce,
   assert.equal(again.data.applied.custom, 0);
 });
 
+test('champ ajouté sous un repère : inséré à sa place dans Notion, déplaçable, suivi des suppressions', () => {
+  const w = world();
+  const a = phone(w, 'Karim Benali', 'cA'); const b = phone(w, 'Sophie Martin', 'cB');
+  a.load(); b.load();
+  a.sync({ fields: fields({ etat_materiel: 'Neuf' }, a.at()) });
+  const base = lines(w);
+  const ids = a.schema.map((s) => s.id);
+  assert.equal(ids[2], 'etat_materiel');
+  const at = base.findIndex((l) => l.startsWith('État du matériel') || l.startsWith(a.schema[2].label));
+  assert.ok(at > -1, JSON.stringify(base));
+  w.now += 1000;
+  // sous « etat_materiel » (au milieu du formulaire), puis un second plus récent sous le même repère
+  const r = a.sync({ custom: { add: [{ id: 'u_aaa111', type: 'text', label: 'Étape A', after: 'etat_materiel', at: a.at() }] } });
+  assert.equal(r.data.applied.custom, 1);
+  assert.equal(r.data.report.custom[0].after, 'etat_materiel');
+  assert.equal(lines(w)[at + 1], 'Étape A : —', 'juste sous son repère');
+  assert.ok(!lines(w).includes('Ajouts terrain'), 'pas de section « Ajouts terrain » pour un champ placé');
+  w.now += 1000;
+  a.sync({ custom: { add: [{ id: 'u_bbb222', type: 'text', label: 'Étape B', after: 'etat_materiel', at: a.at() }] } });
+  assert.deepEqual(lines(w).slice(at + 1, at + 3), ['Étape B : —', 'Étape A : —'], 'le plus récent en premier');
+  // chaîne : C sous A
+  w.now += 1000;
+  a.sync({ custom: { add: [{ id: 'u_ccc333', type: 'checkbox', label: 'Étape C', after: 'u_aaa111', at: a.at() }] } });
+  assert.deepEqual(lines(w).slice(at + 1, at + 4), ['Étape B : —', 'Étape A : —', 'Étape C']);
+  // l'autre technicien voit le placement
+  w.now += 1000;
+  const rb = b.sync({});
+  assert.deepEqual(rb.data.report.custom.map((c) => c.after).sort(), ['etat_materiel', 'etat_materiel', 'u_aaa111']);
+  // déplacement : B passe sous C (bloc recréé à la nouvelle place)
+  w.now += 1000;
+  const mv = a.sync({ custom: { move: [{ id: 'u_bbb222', after: 'u_ccc333', at: a.at() }] } });
+  assert.equal(mv.data.applied.customMoved, 1);
+  assert.deepEqual(lines(w).slice(at + 1, at + 4), ['Étape A : —', 'Étape C', 'Étape B : —']);
+  // un déplacement plus ancien, ou rejoué, est sans effet
+  const old = a.sync({ custom: { move: [{ id: 'u_bbb222', after: 'etat_materiel', at: a.at(-5000) }] } });
+  assert.equal(old.data.applied.customMoved, 0);
+  assert.equal(a.sync({ custom: { move: [{ id: 'u_bbb222', after: 'u_ccc333', at: mv.data.report.custom.find((c) => c.id === 'u_bbb222').mv }] } }).data.applied.customMoved, 0);
+  // valeur conservée à travers le déplacement
+  w.now += 1000;
+  a.sync({ fields: fields({ u_bbb222: 'valeur B' }, a.at()) });
+  w.now += 1000;
+  a.sync({ custom: { move: [{ id: 'u_bbb222', after: '^', at: a.at() }] } });
+  assert.equal(lines(w).indexOf('Étape B : valeur B') < lines(w).indexOf(base[1]), true, '« ^ » : tout en haut');
+  // supprimer A : C (placé sous A) passe sous le repère de A
+  w.now += 1000;
+  a.sync({ custom: { remove: [{ id: 'u_aaa111', at: a.at() }] } });
+  const rc = a.sync({});
+  assert.equal(rc.data.report.custom.find((c) => c.id === 'u_ccc333').after, 'etat_materiel');
+  assert.ok(!lines(w).some((x) => x.startsWith('Étape A')));
+});
+
+test('champs ajoutés : repère inconnu ou boucle → en bas sous « Ajouts terrain » ; section retirée quand le dernier est placé', () => {
+  const w = world();
+  const a = phone(w, 'Karim Benali', 'cA'); a.load();
+  a.sync({ custom: { add: [
+    { id: 'u_xxx111', type: 'text', label: 'X', after: 'inconnu', at: a.at() },
+    { id: 'u_yyy222', type: 'text', label: 'Y', after: 'u_zzz333', at: a.at(1) },
+    { id: 'u_zzz333', type: 'text', label: 'Z', after: 'u_yyy222', at: a.at(2) }] } });
+  const l = lines(w);
+  assert.equal(l.includes('Ajouts terrain'), true);
+  assert.deepEqual(l.slice(l.indexOf('Ajouts terrain') + 1).sort(), ['X : —', 'Y : —', 'Z : —']);
+  // placer les trois dans le formulaire : la section disparaît
+  w.now += 1000;
+  a.sync({ custom: { move: [
+    { id: 'u_xxx111', after: 'etat_materiel', at: a.at() }, { id: 'u_yyy222', after: 'etat_materiel', at: a.at() },
+    { id: 'u_zzz333', after: 'etat_materiel', at: a.at() }] } });
+  assert.equal(lines(w).includes('Ajouts terrain'), false);
+  // repère invalide refusé
+  w.now += 1000;
+  const bad = a.sync({ custom: { move: [{ id: 'u_xxx111', after: 'a b', at: a.at() }] } });
+  assert.equal(bad.data.applied.customMoved, 0);
+  assert.equal(bad.data.warnings[0].code, 'INVALID_CUSTOM');
+});
+
+test('champs ajoutés : un champ avec photos reste en place dans Notion quand on le déplace', () => {
+  const w = world();
+  const a = phone(w, 'Karim Benali', 'cA'); a.load();
+  a.sync({ custom: { add: [{ id: 'u_pho111', type: 'image_upload', label: 'Photo terrain', after: 'etat_materiel', at: a.at() }] } });
+  w.now += 1000;
+  const f = a.upload('media-009-zz');
+  a.sync({ photos: { add: [{ mediaId: 'media-009-zz', componentId: 'u_pho111', driveFileId: f, at: a.at() }] } });
+  const before = lines(w).indexOf('Photo terrain');
+  w.now += 1000;
+  const r = a.sync({ custom: { move: [{ id: 'u_pho111', after: '^', at: a.at() }] } });
+  assert.equal(r.data.applied.customMoved, 1);
+  assert.equal(r.data.report.custom[0].after, '^');
+  assert.equal(r.data.report.photos.u_pho111.length, 1, 'photo conservée');
+  assert.equal(lines(w).indexOf('Photo terrain'), before, 'bloc non recréé (il porte la photo)');
+});
+
 test('champs ajoutés refusés sur un CR validé', () => {
   const w = world(); const a = phone(w, 'Karim Benali', 'cA'); a.load();
   a.sync({ status: { value: 'validated', at: a.at() } });

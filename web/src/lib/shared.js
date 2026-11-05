@@ -5,7 +5,8 @@
 //  Une fiche locale garde :
 //    fields   { [id]: { v, at, by?, dirty? } }  valeur courante ; `dirty` = saisie pas
 //                                               encore acquittée par le serveur
-//    custom   { [id]: { type, label, options?, at, by?, dirty? } }  champs ajoutés
+//    custom   { [id]: { type, label, options?, after?, at, mv?, by?, dirty?, moved? } }  champs ajoutés ;
+//             `after` = repère (id d'un champ/section, '^' = tout en haut, absent = en bas), `mv`/`moved` = déplacement à envoyer
 //    customRemovals [{id, at}]  ·  photoRemovals [{mediaId, at}]    suppressions à envoyer
 //    shared   dernier état public du serveur (sans les valeurs, déjà fusionnées dans fields)
 //    pendingStatus { value:'validated'|'draft', at }   demande de (ré)ouverture à envoyer
@@ -76,15 +77,104 @@ export function buildItems(rec) {
     else if (b.kind === 'link') items.push({ k: 'link', id: 'L:' + b.blockId, url: b.url, text: b.text })
     else if (b.kind === 'html') items.push({ k: 'html', id: 'H:' + b.blockId, html: b.html })
   }
-  const custom = Object.keys(rec.custom || {}).sort((a, b) => rec.custom[a].at - rec.custom[b].at || (a < b ? -1 : 1))
-  if (custom.length) {
-    items.push({ k: 'section', id: CUSTOM_SECTION_ID, level: 1, text: CUSTOM_SECTION_TITLE })
-    for (const id of custom) {
-      const c = rec.custom[id]
-      items.push({ k: 'field', id, type: c.type, label: c.label, options: c.options, custom: true })
+  return weaveItems(items, rec.custom || {})
+}
+
+const byIdOrder = (a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+const isAnchorItem = (it) => it.k === 'field' || it.k === 'section'
+
+/* Place les champs ajoutés dans la liste du template. MÊME algorithme que `weaveCustom_` du serveur (gas/Report.gs) : à garder identique.
+ *  Un champ s'insère juste après son repère et après les textes qui suivent ce repère (avant le prochain champ) ; plusieurs champs
+ *  sous le même repère : le plus récemment placé d'abord ; repère introuvable (ou boucle) : en bas sous « Ajouts terrain ».
+ *  `base` : éléments du template ; `custom` : { [id]: { type, label, options?, after?, at, mv? } }.  */
+export function weaveItems(base, custom) {
+  const list = Object.keys(custom).map((id) => ({ id, ...custom[id] })).sort(byIdOrder)
+  const byId = Object.fromEntries(list.map((c) => [c.id, c]))
+  const anchors = new Set(base.filter(isAnchorItem).map((it) => it.id))
+  const parent = {}
+  for (const c of list) {
+    const a = typeof c.after === 'string' ? c.after : ''
+    parent[c.id] = a === '^' || (a !== c.id && (anchors.has(a) || byId[a])) ? a : ''
+  }
+  for (const c of list) {                       // une boucle est coupée au champ qui la ferme
+    let cur = parent[c.id]
+    for (let n = 0; n <= list.length && cur && byId[cur]; n++) {
+      if (cur === c.id) { parent[c.id] = ''; break }
+      cur = parent[cur]
     }
   }
-  return items
+  const ord = (c) => c.mv || c.at || 0
+  const kids = {}
+  for (const c of list) (kids[parent[c.id]] = kids[parent[c.id]] || []).push(c)
+  for (const k of Object.keys(kids)) {
+    kids[k].sort((a, b) => (k === '' ? ord(a) - ord(b) : ord(b) - ord(a)) || byIdOrder(a, b))
+  }
+  const out = []
+  const emit = (id) => {
+    const c = byId[id]
+    out.push({ k: 'field', id, type: c.type, label: c.label, options: c.options, custom: true })
+    for (const kid of kids[id] || []) emit(kid.id)
+  }
+  for (const kid of kids['^'] || []) emit(kid.id)
+  let i = 0
+  while (i < base.length) {
+    const it = base[i++]
+    out.push(it)
+    if (isAnchorItem(it)) {
+      while (i < base.length && !isAnchorItem(base[i])) out.push(base[i++])
+      for (const kid of kids[it.id] || []) emit(kid.id)
+    }
+  }
+  if ((kids[''] || []).length) {
+    out.push({ k: 'section', id: CUSTOM_SECTION_ID, level: 1, text: CUSTOM_SECTION_TITLE })
+    for (const kid of kids['']) emit(kid.id)
+  }
+  return out
+}
+
+// Repère d'un champ ajouté « tout en bas » : le dernier champ (ou section) du formulaire ; « ^ » si le formulaire est vide.
+export function bottomAnchor(items) {
+  for (let i = items.length - 1; i >= 0; i--) {
+    const it = items[i]
+    if (isAnchorItem(it) && it.id !== CUSTOM_SECTION_ID) return it.id
+  }
+  return '^'
+}
+
+// Le repère existe-t-il dans le formulaire (champ ou section, hors intertitre « Ajouts terrain ») ?
+export const isAnchorId = (items, id) => id === '^' || items.some((it) => isAnchorItem(it) && it.id === id && it.id !== CUSTOM_SECTION_ID)
+
+// Où va un champ ajouté s'il monte (dir « up ») ou descend (« down ») d'un cran ? → { after } ou null (déjà au bout).
+// `items` : buildItems(rec) ; `custom` : rec.custom. Le champ passe devant (ou derrière) l'élément voisin, champs et sections comptant seuls.
+export function moveTarget(items, id, dir, custom = {}) {
+  const seq = items.filter(isAnchorItem)
+  const i = seq.findIndex((it) => it.id === id)
+  if (i < 0) return null
+  const isHead = (it) => !!it && it.id === CUSTOM_SECTION_ID
+  if (dir === 'up') {
+    if (i === 0) return null
+    let before = seq[i - 2]
+    if (isHead(before) || isHead(seq[i - 1])) before = isHead(before) ? seq[i - 3] : before
+    return { after: before ? before.id : '^' }
+  }
+  const under = (it) => {                          // placé sous ce champ (directement ou par une chaîne de champs ajoutés)
+    let cur = it
+    for (let n = 0; n < 60 && cur && custom[cur.id]; n++) {
+      const a = custom[cur.id].after
+      if (a === id) return true
+      cur = seq.find((x) => x.id === a)
+    }
+    return false
+  }
+  let j = i + 1
+  while (j < seq.length && under(seq[j])) j++
+  if (j >= seq.length) return null
+  let next = seq[j]
+  if (isHead(next)) {
+    next = seq[j + 1]
+    if (!next) return { after: '' }
+  }
+  return { after: next.id }
 }
 
 // Schéma envoyé au serveur (même forme que `schema` de getIntervention).
@@ -109,7 +199,7 @@ export function schemaFromTemplate(templateBlocks) {
  *  photo n'attend : le serveur refuse les photos arrivant après la validation.
  * ──────────────────────────────────────────────────────────────────────────── */
 export function computeChanges(rec, photoRows = [], { maxPhotos = PHOTOS_PER_REQUEST } = {}) {
-  const sent = { fields: {}, status: null, customAdd: [], customRemove: [], photoRemove: [] }
+  const sent = { fields: {}, status: null, customAdd: [], customMove: {}, customRemove: [], photoRemove: [] }
   const changes = {}
   const frozen = serverFrozen(rec)
 
@@ -130,13 +220,18 @@ export function computeChanges(rec, photoRows = [], { maxPhotos = PHOTOS_PER_REQ
 
     const add = Object.entries(rec.custom || {})
       .filter(([, c]) => c.dirty)
-      .map(([id, c]) => ({ id, type: c.type, label: c.label, ...(c.options ? { options: c.options } : {}), at: c.at }))
+      .map(([id, c]) => ({ id, type: c.type, label: c.label, ...(c.options ? { options: c.options } : {}), ...(c.after ? { after: c.after } : {}), at: c.at }))
+    const move = Object.entries(rec.custom || {})
+      .filter(([, c]) => c.moved && !c.dirty)
+      .map(([id, c]) => ({ id, after: c.after || '', at: c.mv }))
     const remove = (rec.customRemovals || []).map((r) => ({ id: r.id, at: r.at }))
-    if (add.length || remove.length) {
+    if (add.length || move.length || remove.length) {
       changes.custom = {}
       if (add.length) changes.custom.add = add
+      if (move.length) changes.custom.move = move
       if (remove.length) changes.custom.remove = remove
       sent.customAdd = add.map((c) => c.id)
+      sent.customMove = Object.fromEntries(move.map((m) => [m.id, m.at]))
       sent.customRemove = remove.map((c) => c.id)
     }
 
@@ -162,7 +257,7 @@ export function computeChanges(rec, photoRows = [], { maxPhotos = PHOTOS_PER_REQ
 export function needsSync(rec, photoRows = []) {
   if (rec.pendingStatus) return true
   if (Object.values(rec.fields || {}).some((f) => f.dirty)) return true
-  if (Object.values(rec.custom || {}).some((c) => c.dirty)) return true
+  if (Object.values(rec.custom || {}).some((c) => c.dirty || c.moved)) return true
   if ((rec.customRemovals || []).length || (rec.photoRemovals || []).length) return true
   return photoRows.some((r) => r.uploadStatus === 'queued' || r.uploadStatus === 'uploaded')
 }
@@ -174,7 +269,8 @@ export function needsSync(rec, photoRows = []) {
 // ctx    : { sent, overridden, rejected, reset, localMediaIds }
 // Renvoie { patch, ackedMediaIds, conflicts }.
 export function mergeServerState(rec, report, ctx = {}) {
-  const sent = ctx.sent || { fields: {}, status: null, customAdd: [], customRemove: [], photoRemove: [] }
+  const sent = ctx.sent || { fields: {}, status: null, customAdd: [], customMove: {}, customRemove: [], photoRemove: [] }
+  const sentMoves = sent.customMove || {}
   const rejectedFields = new Set((ctx.rejected && ctx.rejected.fields) || [])
   const rejectedCustom = new Set((ctx.rejected && ctx.rejected.custom) || [])
   const overridden = Object.fromEntries((ctx.overridden || []).map((o) => [o.id, o]))
@@ -204,8 +300,18 @@ export function mergeServerState(rec, report, ctx = {}) {
   // — champs ajoutés
   const custom = {}
   const removed = new Set(report.removedCustom || [])
-  for (const c of report.custom || []) custom[c.id] = { type: c.type, label: c.label, options: c.options, by: personName(c.by), at: c.at }
+  for (const c of report.custom || []) {
+    custom[c.id] = { type: c.type, label: c.label, options: c.options, by: personName(c.by), at: c.at }
+    if (c.after) custom[c.id].after = c.after
+    if (c.mv) custom[c.id].mv = c.mv
+  }
   for (const [id, c] of Object.entries(rec.custom || {})) {
+    // déplacement pas encore acquitté (ou refusé, ou fait depuis l'envoi) : ma position fait foi, elle repartira
+    if (c.moved && !c.dirty && custom[id] && !(sentMoves[id] === c.mv && !rejectedCustom.has(id))) {
+      custom[id] = { ...custom[id], ...(c.after ? { after: c.after } : { after: undefined }), mv: c.mv, moved: true }
+      if (!c.after) delete custom[id].after
+      continue
+    }
     if (!c.dirty) continue
     const wasSent = sent.customAdd.includes(id)
     if (removed.has(id)) continue
