@@ -307,7 +307,7 @@ export function createStore(name = 'ouidrop-interventions') {
 
   // Monte (dir « up ») ou descend (« down ») un champ ajouté d'un cran. Renvoie false s'il est déjà au bout.
   const moveCustomField = (id, customId, dir) =>
-    db.transaction('rw', db.interventions, async () => {
+    db.transaction('rw', db.interventions, db.media_queue, async () => {      // commit() lit aussi media_queue
       const rec = await load(id)
       assertEditable(rec)
       const c = rec.custom[customId]
