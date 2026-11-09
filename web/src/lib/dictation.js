@@ -11,15 +11,31 @@ export const dictationSupported = () => !!Recognition()
 
 const strip = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9' ]+/g, ' ').replace(/\s+/g, ' ').trim()
 
-// Ordres vocaux : seulement quand TOUTE la phrase dite est l'ordre (un mot dans une phrase reste du texte).
-const NEXT = ['suivant', 'champ suivant', 'passe au suivant', 'passer au suivant', 'au suivant']
-const STOP = ['stop', 'arrete', 'arreter', 'arrete la dictee', 'termine', 'fin de la dictee', 'fin dictee', 'dictee terminee']
-export function spokenCommand(text) {
-  const t = strip(text)
-  if (NEXT.includes(t)) return 'next'
-  if (STOP.includes(t)) return 'stop'
-  return null
+// Ordres vocaux. En fin de phrase on reconnaît « stop » (et « stoppe », que les moteurs entendent souvent) ou « champ suivant » :
+// le moteur les colle à ce qui vient d'être dicté. Les mots courants (« terminé », « suivant ») ne comptent que s'ils sont seuls.
+const END_STOP = ['stop dictee', 'stoppe la dictee', 'arrete la dictee', 'arreter la dictee', 'fin de la dictee', 'fin dictee', 'stoppe', 'stoppes', 'stop']
+const END_NEXT = ['passe au champ suivant', 'passer au champ suivant', 'champ suivant']
+const ALONE_STOP = ['arrete', 'arret', 'arreter', 'termine', 'fini', 'fin']
+const ALONE_NEXT = ['suivant', 'suivante', 'au suivant']
+
+// « je voudrais tester stoppe » → { text: 'je voudrais tester', command: 'stop' } ; sans ordre : { text, command: null }.
+export function parseSpoken(raw) {
+  const words = String(raw || '').trim().split(/\s+/).map((w) => ({ w, n: strip(w) })).filter((x) => x.n)
+  const norm = words.map((x) => x.n)
+  const alone = norm.join(' ')
+  if (ALONE_STOP.includes(alone)) return { text: '', command: 'stop' }
+  if (ALONE_NEXT.includes(alone)) return { text: '', command: 'next' }
+  const endings = [...END_STOP.map((p) => [p, 'stop']), ...END_NEXT.map((p) => [p, 'next'])]
+    .map(([p, c]) => [p.split(' '), c])
+    .sort((x, y) => y[0].length - x[0].length)
+  for (const [ws, command] of endings) {
+    if (norm.length >= ws.length && ws.every((w, i) => norm[norm.length - ws.length + i] === w)) {
+      return { text: words.slice(0, words.length - ws.length).map((x) => x.w).join(' '), command }
+    }
+  }
+  return { text: String(raw || '').trim(), command: null }
 }
+export const spokenCommand = (text) => { const r = parseSpoken(text); return r.text ? null : r.command }
 
 // Ponctuation et retours à la ligne dits à voix haute (les accents ne comptent pas comme limites de mot).
 const W = (words) => new RegExp(`(?<![\\p{L}\\d])(?:${words})(?![\\p{L}\\d])`, 'giu')
@@ -81,9 +97,11 @@ export function describeError(code) {
 
 let active = null                         // un seul micro à la fois : { stop() }
 
-// onFinal(texte) : phrase reconnue ; onInterim(texte) : brouillon en cours ; onEnd(raison) : micro coupé ('stop' | 'command' | 'error' | 'ended') ;
-// onError(code) ; onCommand('next' | 'stop').
-export function createDictation({ lang = 'fr-FR', onFinal, onInterim, onEnd, onError, onCommand } = {}) {
+// onText(texte) : TOUT ce qui a été dicté depuis le démarrage (le champ = son texte de départ + ceci : jamais d'ajouts qui se répètent) ;
+// onInterim(texte) : brouillon en cours ; onEnd(raison) : micro coupé ('stop' | 'command' | 'error' | 'ended') ; onError(code) ; onCommand('next' | 'stop').
+// Android renvoie souvent chaque brouillon comme « phrase finale » (« je », « je voudrais », « je voudrais tester »…) :
+// une phrase qui prolonge la précédente la REMPLACE ; une phrase déjà couverte par la précédente est ignorée.
+export function createDictation({ lang = 'fr-FR', onText, onInterim, onEnd, onError, onCommand } = {}) {
   const Rec = Recognition()
   if (!Rec) return null
   let rec = null
@@ -91,6 +109,7 @@ export function createDictation({ lang = 'fr-FR', onFinal, onInterim, onEnd, onE
   let quietRuns = 0                       // écoutes consécutives sans aucun mot : on s'arrête (batterie)
   let heard = false
   let wake = null
+  let phrases = []
 
   const releaseWake = () => { try { wake && wake.release && wake.release() } catch { /* ignoré */ } wake = null }
   const keepAwake = async () => {
@@ -103,6 +122,18 @@ export function createDictation({ lang = 'fr-FR', onFinal, onInterim, onEnd, onE
     if (active === handle) active = null
     onEnd && onEnd(reason)
   }
+
+  function addPhrase(raw) {
+    const clean = cleanSpoken(raw)
+    if (!clean) return false
+    const n = strip(clean)
+    const last = phrases.length ? strip(phrases[phrases.length - 1]) : ''
+    if (last && (n === last || last.startsWith(n))) return false           // déjà couvert
+    if (last && n.startsWith(last)) phrases[phrases.length - 1] = clean      // prolonge la précédente : on la remplace
+    else phrases.push(clean)
+    return true
+  }
+  const sessionText = () => phrases.reduce((acc, p) => mergeText(acc, p), '')
 
   function boot() {
     rec = new Rec()
@@ -118,12 +149,13 @@ export function createDictation({ lang = 'fr-FR', onFinal, onInterim, onEnd, onE
         const t = r[0] ? r[0].transcript : ''
         if (!r.isFinal) { interim += t; continue }
         heard = true
-        const cmd = spokenCommand(t)
-        if (cmd) { onInterim && onInterim(''); onCommand && onCommand(cmd); handle.stop(cmd === 'next' ? 'command' : 'stop'); return }
-        const clean = cleanSpoken(t)
-        if (clean) onFinal && onFinal(clean)
+        const { text, command } = parseSpoken(t)
+        if (addPhrase(text) && onText) onText(sessionText())
+        if (command) { onInterim && onInterim(''); onCommand && onCommand(command); handle.stop(command === 'next' ? 'command' : 'stop'); return }
       }
-      onInterim && onInterim(interim.trim())
+      const shown = interim.trim()
+      const last = phrases.length ? strip(phrases[phrases.length - 1]) : ''
+      onInterim && onInterim(shown && strip(shown) !== last && !last.startsWith(strip(shown)) ? shown : '')
     }
     rec.onerror = (e) => {
       const code = e && e.error
@@ -147,6 +179,7 @@ export function createDictation({ lang = 'fr-FR', onFinal, onInterim, onEnd, onE
       try {
         running = true
         quietRuns = 0
+        phrases = []
         boot()
         rec.start()
         active = handle

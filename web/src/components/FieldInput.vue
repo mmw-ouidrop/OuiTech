@@ -38,6 +38,7 @@ function toggle(opt, on) {
   emit('update', options.value.filter((o) => next.has(o)))     // ordre du template conservé
 }
 function onNumber(e) {
+  if (dictating.value && dict.value) dict.value.stop()
   const raw = e.target.value
   const n = Number(raw.replace(',', '.'))
   emit('update', raw.trim() === '' ? '' : Number.isFinite(n) ? n : raw)
@@ -45,19 +46,29 @@ function onNumber(e) {
 
 const confirmRemove = ref(false)
 
-// Dictée vocale : le texte reconnu s'ajoute à la suite ; un nombre remplace la valeur.
+// Dictée vocale. Le champ vaut « son texte au démarrage du micro + tout ce qui a été dicté depuis » : un brouillon corrigé par le moteur
+// remplace l'ancien au lieu de s'ajouter. Écrire à la main pendant la dictée arrête le micro. Un nombre dicté remplace la valeur.
 const interim = ref('')
 const dictMsg = ref('')
 const dictating = ref(false)
-function onDictation(text) {
+const dict = ref(null)
+let dictBase = ''
+function onListening(on) {
+  dictating.value = on
+  if (on) dictBase = props.value === undefined || props.value === null ? '' : String(props.value)
+}
+function onDictation(session) {
+  dictMsg.value = ''
   if (type.value === 'number') {
-    const n = numberFromSpeech(text)
-    if (n === null) dictMsg.value = `« ${text} » n’est pas un nombre.`
-    else { dictMsg.value = ''; emit('update', n) }
+    const n = numberFromSpeech(session)
+    if (n !== null) emit('update', n)
     return
   }
-  dictMsg.value = ''
-  emit('update', mergeText(props.value === undefined || props.value === null ? '' : String(props.value), text))
+  emit('update', mergeText(dictBase, session))
+}
+function onType(value) {
+  if (dictating.value && dict.value) dict.value.stop()
+  emit('update', value)
 }
 </script>
 
@@ -81,16 +92,16 @@ function onDictation(text) {
         <div v-if="type === 'text'" class="dict">
           <input
             :id="uid" class="input" type="text" :value="value ?? ''" :disabled="disabled"
-            :placeholder="item.placeholder || ''" autocomplete="off" @input="emit('update', $event.target.value)"
+            :placeholder="item.placeholder || ''" autocomplete="off" @input="onType($event.target.value)"
           />
-          <DictationButton :disabled="disabled" :label="label" @text="onDictation" @interim="interim = $event" @message="dictMsg = $event" @listening="dictating = $event" />
+          <DictationButton ref="dict" :disabled="disabled" :label="label" @text="onDictation" @interim="interim = $event" @message="dictMsg = $event" @listening="onListening" />
         </div>
         <div v-else-if="type === 'textarea'" class="dict dict--top">
           <textarea
             :id="uid" class="input" :value="value ?? ''" :disabled="disabled"
-            :placeholder="item.placeholder || ''" rows="4" @input="emit('update', $event.target.value)"
+            :placeholder="item.placeholder || ''" rows="4" @input="onType($event.target.value)"
           ></textarea>
-          <DictationButton :disabled="disabled" :label="label" @text="onDictation" @interim="interim = $event" @message="dictMsg = $event" @listening="dictating = $event" />
+          <DictationButton ref="dict" :disabled="disabled" :label="label" @text="onDictation" @interim="interim = $event" @message="dictMsg = $event" @listening="onListening" />
         </div>
         <div v-else-if="type === 'number'" class="num">
           <input
@@ -98,7 +109,7 @@ function onDictation(text) {
             :placeholder="item.placeholder || ''" autocomplete="off" @input="onNumber"
           />
           <span v-if="item.unit" class="num__unit">{{ item.unit }}</span>
-          <DictationButton :disabled="disabled" :label="label" @text="onDictation" @interim="interim = $event" @message="dictMsg = $event" @listening="dictating = $event" />
+          <DictationButton ref="dict" :disabled="disabled" :label="label" @text="onDictation" @interim="interim = $event" @message="dictMsg = $event" @listening="onListening" />
         </div>
         <input
           v-else-if="type === 'date'" :id="uid" class="input" type="date" :value="value ?? ''" :disabled="disabled"
@@ -133,7 +144,7 @@ function onDictation(text) {
     </template>
 
     <p v-if="dictating || interim" class="small dict__live" role="status" aria-live="polite">
-      <span class="dict__dot" aria-hidden="true"></span>{{ interim || 'Je vous écoute… (dites « stop » ou « champ suivant »)' }}
+      <span class="dict__dot" aria-hidden="true"></span>{{ interim || 'À l’écoute…' }}
     </p>
     <p v-if="dictMsg" class="small dict__msg" role="status">{{ dictMsg }}</p>
 

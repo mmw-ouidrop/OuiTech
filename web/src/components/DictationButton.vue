@@ -28,7 +28,7 @@ function toggle() {
   if (!online.value) return emit('message', 'La dictée demande du réseau. Hors ligne, utilisez le micro du clavier.')
   dictation = createDictation({
     lang: 'fr-FR',
-    onFinal: (t) => emit('text', t),
+    onText: (t) => emit('text', t),
     onInterim: (t) => emit('interim', t),
     onError: (code) => emit('message', describeError(code)),
     onCommand: (c) => { if (c === 'next' && !startNextDictation(btn.value)) emit('message', 'C’était le dernier champ à dicter.') },
@@ -37,6 +37,7 @@ function toggle() {
   if (dictation && dictation.start()) { listening.value = true; emit('listening', true) }
 }
 
+defineExpose({ stop })
 watch(() => props.disabled, (d) => { if (d) stop() })
 onBeforeUnmount(stop)
 </script>
@@ -48,18 +49,18 @@ onBeforeUnmount(stop)
     :aria-label="listening ? 'Arrêter la dictée' + (label ? ' : ' + label : '') : 'Dicter' + (label ? ' : ' + label : '')"
     :title="listening ? 'Arrêter la dictée' : 'Dicter à la voix'" @click="toggle"
   >
-    <NavIcon name="mic" :size="22" />
+    <NavIcon name="mic" :size="18" />
   </button>
 </template>
 
 <style scoped>
 .mic {
-  flex: none; display: inline-grid; place-items: center; width: var(--tap); height: var(--tap); padding: 0;
-  border: 2px solid var(--accent); border-radius: 999px; background: transparent; color: var(--accent); cursor: pointer;
+  flex: none; display: inline-grid; place-items: center; width: 34px; height: 34px; padding: 0;
+  border: 1.5px solid var(--accent); border-radius: 999px; background: transparent; color: var(--accent); cursor: pointer;
 }
 .mic:hover:not(:disabled) { background: var(--surface-2); }
 .mic:disabled { opacity: .4; cursor: not-allowed; }
 .mic--on { background: var(--accent); color: var(--surface); animation: mic-pulse 1.4s ease-out infinite; }
-@keyframes mic-pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent); } 100% { box-shadow: 0 0 0 14px transparent; } }
+@keyframes mic-pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent); } 100% { box-shadow: 0 0 0 9px transparent; } }
 @media (prefers-reduced-motion: reduce) { .mic--on { animation: none; box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 35%, transparent); } }
 </style>

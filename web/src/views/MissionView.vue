@@ -240,10 +240,27 @@ watch(formEl, (el) => {
 onUnmounted(() => io && io.disconnect())
 // Un champ qui disparaît (retiré par un collègue, template modifié) n'est plus un repère.
 watch(items, (list) => { if (selectedId.value && !list.some((it) => it.id === selectedId.value)) selectedId.value = '' })
-const openAdd = (fromEnd = false) => {
-  if (fromEnd) selectedId.value = ''
+// Bouton « + » : sans champ choisi, la fenêtre s'ouvre directement (ajout en bas) ; avec un champ choisi, un petit menu
+// propose « sous le champ choisi » ou « tout en bas ».
+const menuOpen = ref(false)
+const addPreset = ref('')
+const fabEl = ref(null)
+function openAdd(where = '') {
+  if (where === 'bottom-card') { selectedId.value = ''; where = 'end' }
+  addPreset.value = where
+  menuOpen.value = false
   addOpen.value = true
 }
+const onFab = () => (selectedItem.value ? (menuOpen.value = !menuOpen.value) : openAdd('end'))
+const closeMenu = (e) => { if (e.type === 'keydown' ? e.key === 'Escape' : !(fabEl.value && fabEl.value.contains(e.target))) menuOpen.value = false }
+watch(menuOpen, (on) => {
+  const m = on ? 'addEventListener' : 'removeEventListener'
+  document[m]('pointerdown', closeMenu)
+  document[m]('keydown', closeMenu)
+})
+watch(fabShown, (v) => { if (!v) menuOpen.value = false })
+watch(selectedItem, (v) => { if (!v) menuOpen.value = false })
+onUnmounted(() => { document.removeEventListener('pointerdown', closeMenu); document.removeEventListener('keydown', closeMenu) })
 
 async function validate(force = false) {
   await saver.flush()
@@ -461,21 +478,29 @@ const headingTag = (level) => 'h' + Math.min(level + 2, 5)
 
     <section class="card add gap" aria-labelledby="add-title">
       <h3 id="add-title" class="add__title">Un champ manque ?</h3>
-      <button type="button" class="btn btn--ghost" :disabled="frozen" @click="openAdd(true)">Ajouter un champ</button>
+      <button type="button" class="btn btn--ghost" :disabled="frozen" @click="openAdd('bottom-card')">Ajouter un champ</button>
     </section>
 
-    <CustomFieldForm v-model:open="addOpen" :anchor-label="selectedItem ? (selectedItem.label || selectedItem.id) : ''" :add="onAddCustom" />
+    <CustomFieldForm v-model:open="addOpen" :preset="addPreset" :anchor-label="selectedItem ? (selectedItem.label || selectedItem.id) : ''" :add="onAddCustom" />
 
-    <!-- Bouton flottant : visible tant que l'on parcourt le CR -->
+    <!-- Bouton flottant « + » : visible tant que l'on parcourt le CR -->
     <Transition name="fab">
-      <div v-if="fabShown" class="fab" role="group" aria-label="Ajouter un champ au compte rendu">
-        <p v-if="selectedItem" class="fab__where small">
-          <span class="fab__txt">Sous « {{ selectedItem.label || selectedItem.id }} »</span>
-          <button type="button" class="fab__x" aria-label="Ne plus choisir d’emplacement : ajouter tout en bas" title="Ajouter tout en bas" @click="selectedId = ''">✕</button>
-        </p>
-        <button type="button" class="fab__btn" @click="openAdd()">
-          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
-          <span>{{ selectedItem ? 'Ajouter ici' : 'Ajouter un champ' }}</span>
+      <div v-if="fabShown" ref="fabEl" class="fab">
+        <div v-if="menuOpen" class="fab__menu" role="menu" aria-label="Où ajouter le champ ?">
+          <button type="button" role="menuitem" class="fab__item" @click="openAdd('after')">
+            <NavIcon name="under" :size="22" />
+            <span class="fab__lbl"><strong>Sous le champ choisi</strong><small>{{ selectedItem.label || selectedItem.id }}</small></span>
+          </button>
+          <button type="button" role="menuitem" class="fab__item" @click="openAdd('end')">
+            <NavIcon name="bottom" :size="22" />
+            <span class="fab__lbl"><strong>Tout en bas du CR</strong></span>
+          </button>
+        </div>
+        <button
+          type="button" class="fab__btn" :class="{ 'fab__btn--sel': selectedItem }" aria-haspopup="menu" :aria-expanded="menuOpen"
+          :aria-label="selectedItem ? 'Ajouter un champ : choisir l’emplacement' : 'Ajouter un champ'" title="Ajouter un champ" @click="onFab"
+        >
+          <NavIcon :name="menuOpen ? 'close' : 'plus'" :size="26" />
         </button>
       </div>
     </Transition>
@@ -515,12 +540,17 @@ const headingTag = (level) => 'h' + Math.min(level + 2, 5)
 <style scoped>
 .m-ref { margin-bottom: var(--s-1); }
 .add__title { margin-bottom: var(--s-3); }
-.fab { position: fixed; z-index: 25; right: var(--s-4); bottom: calc(var(--s-4) + env(safe-area-inset-bottom, 0px)); display: grid; justify-items: end; gap: var(--s-2); max-width: calc(100vw - 2 * var(--s-4)); }
-.fab__where { display: inline-flex; align-items: center; gap: var(--s-2); max-width: 100%; margin: 0; padding: var(--s-1) var(--s-1) var(--s-1) var(--s-3); border: 1px solid var(--accent); border-radius: 999px; background: var(--surface); color: var(--text); box-shadow: 0 2px 10px rgba(0, 0, 0, .2); }
-.fab__txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fab__x { flex: none; display: grid; place-items: center; width: 32px; height: 32px; border: 0; border-radius: 999px; background: transparent; color: var(--accent); font-size: 16px; cursor: pointer; }
-.fab__btn { display: inline-flex; align-items: center; gap: var(--s-2); min-height: 56px; padding: 0 var(--s-5); border: 0; border-radius: 999px; background: var(--accent); color: var(--surface); font: 700 var(--fs-body)/1 var(--f-body); box-shadow: 0 4px 14px rgba(0, 0, 0, .3); cursor: pointer; }
-.fab__btn:focus-visible, .fab__x:focus-visible { outline: 3px solid var(--ring); outline-offset: 2px; }
+.fab { position: fixed; z-index: 25; right: var(--s-4); bottom: calc(var(--s-4) + env(safe-area-inset-bottom, 0px)); display: grid; justify-items: end; gap: var(--s-2); }
+.fab__btn { position: relative; display: grid; place-items: center; width: 56px; height: 56px; padding: 0; border: 0; border-radius: 50%; background: var(--accent); color: var(--surface); box-shadow: 0 4px 14px rgba(0, 0, 0, .3); cursor: pointer; }
+.fab__btn--sel::after { content: ''; position: absolute; top: 2px; right: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--ring); border: 2px solid var(--surface); }
+.fab__btn:focus-visible, .fab__item:focus-visible { outline: 3px solid var(--ring); outline-offset: 2px; }
+.fab__menu { display: grid; width: min(300px, calc(100vw - 2 * var(--s-4))); overflow: hidden; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--surface); box-shadow: 0 6px 20px rgba(0, 0, 0, .3); }
+.fab__item { display: flex; align-items: center; gap: var(--s-3); min-height: var(--tap); padding: var(--s-2) var(--s-3); border: 0; background: transparent; color: var(--text); text-align: left; cursor: pointer; }
+.fab__item + .fab__item { border-top: 1px solid var(--line); }
+.fab__item:hover { background: var(--surface-2); }
+.fab__item svg { flex: none; color: var(--accent); }
+.fab__lbl { display: grid; min-width: 0; }
+.fab__lbl small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); }
 .fab-enter-active, .fab-leave-active { transition: opacity .15s, transform .15s; }
 .fab-enter-from, .fab-leave-to { opacity: 0; transform: translateY(12px); }
 @media (prefers-reduced-motion: reduce) { .fab-enter-active, .fab-leave-active { transition: none; } }

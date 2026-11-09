@@ -11,6 +11,7 @@ import { mergeText } from '../lib/dictation.js'
 const props = defineProps({
   open: Boolean,
   anchorLabel: { type: String, default: '' },     // champ sous lequel on ajoute (vide : tout en bas)
+  preset: { type: String, default: '' },          // emplacement déjà choisi dans le menu du bouton : 'after' | 'end'
   add: { type: Function, required: true }
 })
 const emit = defineEmits(['update:open'])
@@ -32,13 +33,16 @@ const busy = ref(false)
 const labelInput = ref(null)
 
 const close = () => emit('update:open', false)
-const onDictation = (text) => { label.value = mergeText(label.value, text.split('\n').join(' ')).slice(0, 200) }
+// même principe que FieldInput : nom au démarrage du micro + ce qui a été dicté depuis
+let labelBase = ''
+const onListening = (on) => { if (on) labelBase = label.value }
+const onDictation = (session) => { label.value = mergeText(labelBase, session.split('\n').join(' ')).slice(0, 200) }
 const onKey = (e) => { if (e.key === 'Escape') close() }
 
 watch(() => props.open, (on) => {
   if (on) {
     error.value = ''
-    where.value = props.anchorLabel ? 'after' : 'end'
+    where.value = props.anchorLabel && props.preset !== 'end' ? 'after' : 'end'
     window.addEventListener('keydown', onKey)
     nextTick(() => labelInput.value && labelInput.value.focus())
   } else {
@@ -83,7 +87,7 @@ async function submit() {
           <label for="cf-label">Nom du champ</label>
           <div class="cf__row">
             <input id="cf-label" ref="labelInput" v-model="label" class="input" maxlength="200" autocomplete="off" />
-            <DictationButton label="nom du champ" @text="onDictation" />
+            <DictationButton label="nom du champ" @text="onDictation" @listening="onListening" />
           </div>
         </div>
 
