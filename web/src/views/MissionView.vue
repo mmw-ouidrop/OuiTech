@@ -22,6 +22,7 @@ import { buildOutline, groupLists, jumpTargets, loadViewPrefs, saveViewPrefs, se
 import { named, displayName, hasRole, watch as watchSync } from '../lib/session.js'
 import NavIcon from '../components/NavIcon.vue'
 import PropertiesPanel from '../components/PropertiesPanel.vue'
+import ActionsSection from '../components/ActionsSection.vue'
 import IdentityCard from '../components/IdentityCard.vue'
 import FieldInput from '../components/FieldInput.vue'
 import CustomFieldForm from '../components/CustomFieldForm.vue'
@@ -402,6 +403,8 @@ const headingTag = (level) => 'h' + Math.min(level + 2, 5)
     </section>
 
     <PropertiesPanel :properties="mission.readOnlyData" :page-id="mission.id" />
+
+    <ActionsSection :mission-id="mission.id" :reference="mission.reference" :actions="mission.actions || []" />
 
     <p v-if="mission.templateWarnings && mission.templateWarnings.length" class="note small gap" role="status">
       {{ mission.templateWarnings.length }} point(s) à corriger dans le template Notion :

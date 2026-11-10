@@ -192,6 +192,7 @@ export function createStore(name = 'ouidrop-interventions') {
         readOnlyData: m.properties || [],
         templateBlocks,
         templateWarnings: m.warnings || [],
+        ...(Array.isArray(m.actions) ? { actions: m.actions } : {}),
         schema: m.schema || schemaFromTemplate(templateBlocks),
         remoteEditedAt: m.lastEditedTime || null,
         fetchedAt: now()
@@ -206,6 +207,28 @@ export function createStore(name = 'ouidrop-interventions') {
         }
       }
       return commit(rec)
+    })
+
+  /* ─────────────── Actions à réaliser : état + commentaires du technicien ─────────────── */
+
+  // Journal local par action : { [actionId]: [{ id, state, text, by, at, sent }] }. Il ne touche pas au CR
+  // (pas de synchro du rapport) : l'envoi vers les commentaires Notion passe par la file d'attente.
+  const logActionEntry = (id, actionId, entry) =>
+    db.transaction('rw', db.interventions, async () => {
+      const rec = await db.interventions.get(id)
+      if (!rec) return null
+      const log = { ...(rec.actionLog || {}) }
+      log[actionId] = [...(log[actionId] || []), { sent: false, ...entry }]
+      await db.interventions.update(id, { actionLog: log })
+      return log
+    })
+
+  const markActionSent = (id, actionId, entryId) =>
+    db.transaction('rw', db.interventions, async () => {
+      const rec = await db.interventions.get(id)
+      if (!rec || !rec.actionLog || !rec.actionLog[actionId]) return
+      const log = { ...rec.actionLog, [actionId]: rec.actionLog[actionId].map((e) => (e.id === entryId ? { ...e, sent: true } : e)) }
+      await db.interventions.update(id, { actionLog: log })
     })
 
   /* ────────────────────────────── Saisies ────────────────────────────── */
@@ -568,7 +591,7 @@ export function createStore(name = 'ouidrop-interventions') {
     methodsCatalog: methodsCat, machinesCatalog: machinesCat, missionMediaStore,
     getRacksOverview, saveRacksOverview, touchRacksOverview, getRacksSite, listRacksSites, saveRacksSite, touchRacksSite, clearRacksCache,
     outboxAdd, outboxList, outboxUpdate, outboxRemove,
-    db, getIntervention, listInterventions, findByReference, listPhotos, saveMission, setFields,
+    db, getIntervention, listInterventions, findByReference, listPhotos, saveMission, setFields, logActionEntry, markActionSent,
     addPhoto, removePhoto, addCustomField, removeCustomField, moveCustomField, setReportStatus, resolveConflict,
     dismissNotice, listNeedingSync, beginSync, endSync, setPhotoUploaded, failPhoto,
     applySyncResult, applyPull, setEditors, markServerLost, deleteIntervention
@@ -584,7 +607,7 @@ export const {
   methodsCatalog, machinesCatalog, missionMediaStore,
   getRacksOverview, saveRacksOverview, touchRacksOverview, getRacksSite, listRacksSites, saveRacksSite, touchRacksSite, clearRacksCache,
   outboxAdd, outboxList, outboxUpdate, outboxRemove,
-  db, getIntervention, listInterventions, findByReference, listPhotos, saveMission, setFields,
+  db, getIntervention, listInterventions, findByReference, listPhotos, saveMission, setFields, logActionEntry, markActionSent,
   addPhoto, removePhoto, addCustomField, removeCustomField, moveCustomField, setReportStatus, resolveConflict,
   dismissNotice, listNeedingSync, beginSync, endSync, setPhotoUploaded, failPhoto,
   applySyncResult, applyPull, setEditors, markServerLost, deleteIntervention

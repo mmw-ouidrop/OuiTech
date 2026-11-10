@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { makeWorld, run, api, phone, PAGE, ROOT, PNG_B64 } from './fake-notion.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const SRC = ['Code.gs', 'Report.gs', 'Auth.gs'].map((f) => fs.readFileSync(path.join(here, '..', f), 'utf8'));
+const SRC = ['Code.gs', 'Report.gs', 'Auth.gs', 'Methods.gs', 'Machines.gs', 'Racks Casiers.gs', 'Actions.gs'].map((f) => fs.readFileSync(path.join(here, '..', f), 'utf8'));
 
 function world() {
   const w = makeWorld();

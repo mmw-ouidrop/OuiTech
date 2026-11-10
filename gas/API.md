@@ -165,3 +165,9 @@ photoErrors[], photosRemaining, cleanup`.
 `MEDIA_NOT_FOUND` · `MEDIA_UNAVAILABLE` · `COLUMN_MISSING` · `CONFIG_INVALID` · `NOTION_FORBIDDEN` · `BUSY` (verrou occupé > 30 s) · `STATE_TOO_LARGE` · `STATE_DESYNC` ·
 `TEMPLATE_CHANGED` · `FORBIDDEN_ROLE` · `NOTION_ERROR` · `NOTION_UNAVAILABLE` · `NOTION_UPLOAD_FAILED` · `CONFIG_MISSING` · `INTERNAL`.
 (`STATE_MISSING` / `STATE_CORRUPT` ne sortent pas : le rapport est alors reconstruit, avec un avertissement.)
+
+## POST `actionComment`
+`{ action, session, id (anti-doublon), missionId, pageId (action), reference?, name, state?: todo|doing|done|blocked, text? }`
+→ `{ duplicate, state, label }`. Dépose `[Nom] État : Terminée · FI-282` + le texte dans les **commentaires Notion** de la page Action
+(rien d'autre n'est modifié). L'action doit être liée à la mission (relation « Actions prévues »). `getIntervention` renvoie `actions[]`
+(titre, type, durée, description, outillage, fichiers, éléments liés) ; leurs fichiers se lisent via `missionMedia` avec `mission=<id>`.

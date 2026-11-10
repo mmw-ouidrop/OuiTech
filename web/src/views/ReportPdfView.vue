@@ -68,6 +68,14 @@ const others = (f) => f.photos.filter((p) => p.kind !== 'image')
         <template v-for="p in report.props" :key="p.label"><dt>{{ p.label }}</dt><dd>{{ p.text }}</dd></template>
       </dl>
 
+      <section v-if="report.actions.length" class="doc__sec">
+        <h2>Actions réalisées</h2>
+        <div v-for="a in report.actions" :key="a.id" class="doc__field">
+          <h3>{{ a.title }} — {{ a.state }}</h3>
+          <p v-for="(e, i) in a.entries" :key="i" class="doc__val small">{{ formatDateTime(e.at) }} · {{ e.by }}{{ e.state ? ' · ' + e.state : '' }}{{ e.text ? ' : ' + e.text : '' }}</p>
+        </div>
+      </section>
+
       <section v-for="s in report.sections" :key="s.id || 'top'" class="doc__sec">
         <h2 v-if="s.text" :class="'lvl' + s.level">{{ s.text }}</h2>
         <div v-for="f in s.fields" :key="f.id" class="doc__field">

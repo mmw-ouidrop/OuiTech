@@ -15,3 +15,8 @@ Les fichiers de `templates/` sont contrôlés par les tests (`gas/tests/template
 ## Pièces jointes et PDF du CR
 - Un champ `image_upload` accepte photos (HEIC converti en JPEG), PDF et vidéos, 20 Mo max par fichier (limite Notion ; 5 Mo sur un espace Notion gratuit).
 - Bouton « Télécharger le CR en PDF » (fiche) : page imprimable `#/m/<réf>/pdf` générée hors ligne depuis l'appareil ; « Enregistrer en PDF » dans la fenêtre d'impression. Photos intégrées ; vidéos/PDF listés par leur nom.
+
+## Actions à réaliser
+La relation « Actions prévues » de la fiche est lue (Actions.gs). Le technicien voit chaque action (consigne, outillage, plans, casiers/tickets liés),
+choisit un état (À faire / En cours / Terminée / Impossible) et peut commenter (dictée vocale possible) ; l'envoi se fait dans les commentaires Notion de l'action,
+même hors ligne (file d'envoi). Nécessite les capacités « Read comments » et « Insert comments » de l'intégration. Noms de colonnes modifiables : propriétés de script `ACTIONS_*` (voir en-tête d'Actions.gs).

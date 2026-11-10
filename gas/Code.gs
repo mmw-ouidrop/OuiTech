@@ -79,7 +79,7 @@
 
 // Version du code. `?action=ping` la renvoie : si elle ne correspond pas à celle de l'archive reçue, le déploiement
 // (« Gérer les déploiements ▸ Nouvelle version ») n'a pas été mis à jour.
-const SCRIPT_VERSION = '2026-11-10.1';
+const SCRIPT_VERSION = '2026-11-10.2';
 
 const NOTION_API = 'https://api.notion.com/v1';
 
@@ -222,6 +222,8 @@ function doPost(e) {
         return ok_(syncReport_(body));
       case 'methodComment':
         return ok_(postMethodComment_(body));
+      case 'actionComment':
+        return ok_(postActionComment_(body));
       case 'rackDiagnosis':
         return ok_(postRackDiagnosis_(body));
       case 'rackComment':
@@ -376,6 +378,13 @@ function getIntervention_(idParam) {
     }
   }
 
+  let actions = [];
+  try {
+    actions = readActions_(page, ctx.warnings);
+  } catch (err) {
+    ctx.warnings.push({ code: 'ACTIONS_ERROR', message: err.message });
+  }
+
   return {
     schema: buildSchema_(ctx.out),
     report: report,
@@ -387,6 +396,7 @@ function getIntervention_(idParam) {
     lastEditedTime: page.last_edited_time,
     properties: properties,
     templateBlocks: ctx.out,
+    actions: actions,
     warnings: ctx.warnings
   };
 }
@@ -792,7 +802,12 @@ function getMissionMedia_(p) {
   if (!/^[0-9a-f]{32}$/.test(pageId)) throw new ApiError_('BAD_REQUEST', 'Identifiant de page invalide');
   const page = notion_('GET', '/pages/' + pageId);
   const par = page.parent || {};
-  if (plainId_(par.database_id) !== plainId_(cfg_('NOTION_DB_ID', ''))) throw new ApiError_('NOT_FOUND', 'Page introuvable');
+  if (p.mission) {
+    // Fichier d'une action liée à la mission (plans, méthodes…).
+    assertActionOfMission_(methodPageId_(p.mission), pageId);
+  } else if (plainId_(par.database_id) !== plainId_(cfg_('NOTION_DB_ID', ''))) {
+    throw new ApiError_('NOT_FOUND', 'Page introuvable');
+  }
   const fileProps = Object.keys(page.properties || {}).filter(function (n) { return page.properties[n].type === 'files'; });
   return deliverMedia_(mediaSource_(page, p.key, fileProps), p.mode);
 }

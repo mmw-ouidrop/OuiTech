@@ -96,7 +96,7 @@ export const api = {
   methodMedia: ({ page, key, mode }) => get({ action: 'methodMedia', page, key, mode: mode || 'data' }, 60000),
 
   // Image / fichier posé dans le contenu d'une page de mission (même réponse que methodMedia).
-  missionMedia: ({ page, key, mode }) => get({ action: 'missionMedia', page, key, mode: mode || 'data' }, 60000),
+  missionMedia: ({ page, key, mode, mission }) => get({ action: 'missionMedia', page, key, mode: mode || 'data', ...(mission ? { mission } : {}) }, 60000),
 
   // Liste des machines (lecture seule), même principe.
   machines: ({ sinceRev } = {}) => get({ action: 'machines', sinceRev: sinceRev || '' }, 45000),
@@ -111,6 +111,7 @@ export const api = {
   // Envois qui passent par la file d'attente locale (lib/outbox.js) : `id` rend le rejeu sans effet.
   rackDiagnosis: (p) => post({ action: 'rackDiagnosis', ...p }, 45000),
   methodComment: (p) => post({ action: 'methodComment', ...p }, 45000),
+  actionComment: (p) => post({ action: 'actionComment', ...p }, 45000),   // état + commentaire d'une action liée à la fiche
   templateGet: (id) => get({ action: 'templateGet', id }, 45000),          // profil support
   templateSave: (p) => post({ action: 'templateSave', ...p }, 90000),       // profil support
   rackSetState: (p) => post({ action: 'rackSetState', ...p }, 45000),     // profil support

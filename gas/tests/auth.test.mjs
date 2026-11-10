@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { makeWorld, run, api, PW_TECH, PW_SUPPORT } from './fake-notion.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const SRC = ['Code.gs', 'Report.gs', 'Auth.gs'].map((f) => fs.readFileSync(path.join(here, '..', f), 'utf8'));
+const SRC = ['Code.gs', 'Report.gs', 'Auth.gs', 'Methods.gs', 'Machines.gs', 'Racks Casiers.gs', 'Actions.gs'].map((f) => fs.readFileSync(path.join(here, '..', f), 'utf8'));
 const world = () => { const w = makeWorld(); SRC.forEach((s) => run(w.ctx, s)); return w; };
 const login = (raw, over = {}) => raw.post({ action: 'login', password: PW_TECH, firstName: 'Karim', lastName: 'Benali', clientId: 'dev-1', ...over });
 

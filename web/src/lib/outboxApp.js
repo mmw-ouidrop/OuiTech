@@ -17,11 +17,12 @@ async function applyComment(pageId, result) {
 export const outbox = createOutbox({
   store,
   isOnline: () => online.value && loggedIn.value,
-  senders: { method_comment: api.methodComment, rack_diag: api.rackDiagnosis, rack_state: api.rackSetState, rack_comment: api.rackComment },
+  senders: { method_comment: api.methodComment, rack_diag: api.rackDiagnosis, rack_state: api.rackSetState, rack_comment: api.rackComment, action_comment: api.actionComment },
   onDone: async (entry, result) => {
     if (entry.kind === 'rack_diag') await racks.applyDiagnosis(entry.payload.pageId, result)
     if (entry.kind === 'rack_state') await racks.applyState(entry.payload.pageId, result)
     if (entry.kind === 'method_comment') await applyComment(entry.payload.pageId, result)
+    if (entry.kind === 'action_comment') await store.markActionSent(entry.payload.missionId, entry.payload.pageId, entry.id)
   }
 })
 
