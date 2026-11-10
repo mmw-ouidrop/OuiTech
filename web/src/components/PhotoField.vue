@@ -4,6 +4,7 @@
 // on montre qui l'a prise et quand.
 import { computed, onBeforeUnmount, watch } from 'vue'
 import { formatTime, personName } from '../lib/format.js'
+import { ACCEPT, kindOf, sizeLabel } from '../lib/attachments.js'
 
 const props = defineProps({
   id: { type: String, required: true },
@@ -49,7 +50,13 @@ function pick(e) {
   <div class="photos">
     <ul v-if="rows.length || others.length" class="photos__grid">
       <li v-for="r in rows" :key="r.mediaId" class="photo" :class="{ 'photo--failed': r.uploadStatus === 'failed' }">
-        <img :src="urlFor(r)" alt="Photo prise sur cet appareil" loading="lazy" />
+        <img v-if="kindOf(r.mimeType, r.fileName) === 'image'" :src="urlFor(r)" alt="Photo prise sur cet appareil" loading="lazy" />
+        <video v-else-if="kindOf(r.mimeType, r.fileName) === 'video'" :src="urlFor(r)" controls preload="metadata" playsinline />
+        <a v-else :href="urlFor(r)" target="_blank" rel="noopener" class="photo__file">
+          <svg viewBox="0 0 24 24" width="32" height="32" aria-hidden="true"><path d="M6 3h8l4 4v14H6z M14 3v4h4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" /></svg>
+          <span class="small">{{ r.fileName }}</span>
+        </a>
+        <span v-if="kindOf(r.mimeType, r.fileName) !== 'image'" class="photo__state small">{{ r.fileName }} · {{ sizeLabel(r.size) }}</span>
         <span class="photo__state small">{{ STATUS[r.uploadStatus] || '' }}</span>
         <button v-if="!disabled" type="button" class="photo__del" :aria-label="'Supprimer cette photo'" @click="emit('remove', r.mediaId)">
           <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" /></svg>
@@ -62,13 +69,13 @@ function pick(e) {
         <span class="photo__state small">{{ personName(p.by) || 'Auteur inconnu' }} · {{ formatTime(p.at) }}</span>
       </li>
     </ul>
-    <p v-else class="small muted">Aucune photo pour l’instant.</p>
+    <p v-else class="small muted">Aucune photo ni fichier pour l’instant.</p>
 
     <label v-if="!disabled" class="btn btn--ghost photos__add" :class="{ 'photos__add--off': full || busy }">
-      <input type="file" accept="image/*" multiple class="sr-only" :disabled="full || busy" @change="pick" />
-      {{ busy ? 'Traitement…' : full ? 'Maximum atteint' : 'Ajouter des photos' }}
+      <input type="file" :accept="ACCEPT" multiple class="sr-only" :disabled="full || busy" @change="pick" />
+      {{ busy ? 'Traitement…' : full ? 'Maximum atteint' : 'Ajouter photos, PDF ou vidéos' }}
     </label>
-    <p v-if="max > 0" class="small muted">{{ count }} / {{ max }} photo{{ max > 1 ? 's' : '' }}</p>
+    <p v-if="max > 0" class="small muted">{{ count }} / {{ max }} fichier{{ max > 1 ? 's' : '' }}</p>
   </div>
 </template>
 
@@ -76,6 +83,8 @@ function pick(e) {
 .photos { display: grid; gap: var(--s-3); }
 .photos__grid { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-3); grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
 .photo { position: relative; display: grid; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-2); overflow: hidden; }
+.photo__file { display: grid; justify-items: center; gap: var(--s-1); padding: var(--s-3); color: var(--text); text-decoration: none; word-break: break-all; }
+.photo video,
 .photo img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; }
 .photo__state { padding: var(--s-1) var(--s-2); color: var(--text); }
 .photo--failed { border-color: var(--danger); border-width: 2px; }

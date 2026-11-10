@@ -235,7 +235,7 @@ export function computeChanges(rec, photoRows = [], { maxPhotos = PHOTOS_PER_REQ
       sent.customRemove = remove.map((c) => c.id)
     }
 
-    const pAdd = batch.map((r) => ({ mediaId: r.mediaId, componentId: r.blockId, driveFileId: r.driveFileId, at: r.createdAt }))
+    const pAdd = batch.map((r) => ({ mediaId: r.mediaId, componentId: r.blockId, driveFileId: r.driveFileId, fileName: r.fileName, at: r.createdAt }))
     const pRemove = (rec.photoRemovals || []).map((r) => ({ mediaId: r.mediaId, at: r.at }))
     if (pAdd.length || pRemove.length) {
       changes.photos = {}

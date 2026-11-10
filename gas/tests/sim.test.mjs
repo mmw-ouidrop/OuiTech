@@ -680,6 +680,22 @@ test('contrôles : token, auteur, clientId, page hors base, valeurs invalides', 
   assert.deepEqual(r.data.warnings.map((x) => x.code).sort(), ['INVALID_VALUE', 'PHOTO_FIELD_HAS_NO_VALUE', 'UNKNOWN_FIELD']);
 });
 
+test('pièces jointes : PDF et vidéo deviennent des blocs pdf / video sous le champ', () => {
+  const w = world(); const a = phone(w, 'Karim Benali', 'cA'); a.load();
+  a.sync({ fields: fields({ etat_materiel: 'Neuf' }, a.at()) });
+  const pdf = a.upload('media-pdf-01', 'rapport.pdf', 'application/pdf');
+  const vid = a.upload('media-vid-01', 'film.mp4', 'video/mp4');
+  const add = [
+    { mediaId: 'media-pdf-01', componentId: 'photo_compteur', driveFileId: pdf, fileName: 'rapport.pdf', at: a.at(1) },
+    { mediaId: 'media-vid-01', componentId: 'photo_compteur', driveFileId: vid, fileName: 'film.mp4', at: a.at(2) }
+  ];
+  const r = a.sync({ photos: { add } });
+  assert.equal(r.data.applied.photos, 2);
+  const blk = w.visibleReport().find((b) => w.text(b).startsWith('Prendre en photo'));
+  const kids = w.childrenOf(blk.id).map((b) => b.type);
+  assert.deepEqual(kids.filter((t) => t === 'pdf' || t === 'video').sort(), ['pdf', 'video']);
+});
+
 test('route 2 uploadMedia : dossier par référence, idempotent, sans lien public, types refusés', () => {
   const w = world(); const { post } = api(w);
   const a = post({ action: 'uploadMedia', fileData: 'data:image/png;base64,' + PNG_B64, fileName: 'compteur.png', mimeType: 'image/png', mediaId: 'm-1', reference: 'FI-252' });
@@ -690,6 +706,7 @@ test('route 2 uploadMedia : dossier par référence, idempotent, sans lien publi
   assert.equal(b.data.duplicate, true); assert.equal(b.data.fileId, a.data.fileId);
   assert.equal(Object.keys(w.drive).length, 1);
   assert.equal(post({ action: 'uploadMedia', fileData: PNG_B64, fileName: 'x.heic', mimeType: 'image/heic' }).error.code, 'UNSUPPORTED_TYPE');
+  assert.equal(post({ action: 'uploadMedia', fileData: PNG_B64, fileName: 'x.exe', mimeType: 'application/x-msdownload' }).error.code, 'UNSUPPORTED_TYPE');
   assert.equal(post({ action: 'uploadMedia', fileData: '@@@', fileName: 'x.png', mimeType: 'image/png' }).error.code, 'BAD_REQUEST');
 });
 

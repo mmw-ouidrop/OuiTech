@@ -2,6 +2,7 @@ import { createRouter, createWebHashHistory } from 'vue-router'
 import HomeView from './views/HomeView.vue'
 import FichesView from './views/FichesView.vue'
 import MissionView from './views/MissionView.vue'
+import ReportPdfView from './views/ReportPdfView.vue'
 import LoginView from './views/LoginView.vue'
 import MethodsView from './views/MethodsView.vue'
 import MethodView from './views/MethodView.vue'
@@ -27,6 +28,7 @@ export const router = createRouter({
     { path: '/', name: 'home', component: HomeView, meta: { title: 'Accueil' } },
     { path: '/fiches', name: 'fiches', component: FichesView, meta: { title: 'Fiches et CR' } },
     { path: '/m/:reference', name: 'mission', component: MissionView, props: true, meta: { title: 'Fiche d’intervention', section: 'fiches' } },
+    { path: '/m/:reference/pdf', name: 'mission-pdf', component: ReportPdfView, props: true, meta: { title: 'CR en PDF', section: 'fiches' } },
     { path: '/methodes', name: 'methodes', component: MethodsView, meta: { title: 'Méthodes' } },
     { path: '/methodes/:id', name: 'methode', component: MethodView, props: true, meta: { title: 'Méthode', section: 'methodes' } },
     { path: '/machines', name: 'machines', component: MachinesView, meta: { title: 'Machines' } },

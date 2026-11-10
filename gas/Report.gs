@@ -364,6 +364,9 @@ function cleanPhotoAdds_(arr) {
     return p && /^[A-Za-z0-9_-]{8,64}$/.test(String(p.mediaId || '')) &&
       typeof p.componentId === 'string' && p.componentId.length <= 120 &&
       DRIVE_ID_RE.test(String(p.driveFileId || ''));
+  }).map(function (p) {
+    p.fileName = typeof p.fileName === 'string' ? p.fileName.slice(0, 120) : '';
+    return p;
   });
 }
 
@@ -1018,8 +1021,8 @@ function applyChanges_(c) {
   const driveToClean = [];
   c.photoAdds.forEach(function (p) {
     if (state.photos[p.mediaId]) { driveToClean.push(p.driveFileId); return; }   // déjà là : on libère le transit
-    const uploadId = c.uploads[p.mediaId];
-    if (!uploadId) return;                                  // en erreur ou reporté : le client renverra
+    const up = c.uploads[p.mediaId];
+    if (!up) return;                                  // en erreur ou reporté : le client renverra
     if (frozen) { rejected.photos.push(p.mediaId); return; }
     const item = itemById[p.componentId];
     const entry = state.blocks[p.componentId];
@@ -1028,10 +1031,12 @@ function applyChanges_(c) {
       driveToClean.push(p.driveFileId);
       return;
     }
-    const img = appendPlain_(entry.b, [{
-      object: 'block', type: 'image',
-      image: { type: 'file_upload', file_upload: { id: uploadId }, caption: rt_(item.label) }
-    }])[0];
+    const bt = blockTypeForMime_(up.mime);
+    const payload = { type: 'file_upload', file_upload: { id: up.id }, caption: rt_(bt === 'image' ? item.label : (p.fileName || up.name || item.label)) };
+    if (bt === 'file') payload.name = p.fileName || up.name;
+    const blockDef = { object: 'block', type: bt };
+    blockDef[bt] = payload;
+    const img = appendPlain_(entry.b, [blockDef])[0];
     const at = atCorr_(p.at, c);
     state.photos[p.mediaId] = { f: p.componentId, b: img.id, by: c.by, at: at };
     driveToClean.push(p.driveFileId);

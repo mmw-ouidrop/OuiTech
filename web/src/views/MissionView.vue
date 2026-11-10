@@ -12,7 +12,7 @@ import {
 } from '../db.js'
 import { api } from '../lib/api.js'
 import { createAutosaver } from '../lib/autosave.js'
-import { prepareImage } from '../lib/image.js'
+import { prepareAttachment } from '../lib/attachments.js'
 import { normalizeReference } from '../lib/ref.js'
 import { missionStatus, formatDateTime, formatTime, personName } from '../lib/format.js'
 import { online } from '../lib/online.js'
@@ -183,7 +183,8 @@ async function onAddPhotos(fieldId, files) {
   try {
     for (const file of files) {
       try {
-        await addPhoto(mission.value.id, fieldId, await prepareImage(file), { fileName: `${fieldId}-${Date.now()}.jpg` })
+        const { blob, fileName } = await prepareAttachment(file, fieldId)
+        await addPhoto(mission.value.id, fieldId, blob, { fileName })
       } catch (e) {
         photoError.value = e.message || 'Photo non ajoutée.'
       }
@@ -529,6 +530,7 @@ const headingTag = (level) => 'h' + Math.min(level + 2, 5)
         </p>
         <button v-if="!frozen" type="button" class="btn btn--block" @click="validate(false)">Valider le CR</button>
         <button v-else type="button" class="btn btn--block btn--ghost" @click="reopen">Modifier à nouveau</button>
+        <router-link :to="{ name: 'mission-pdf', params: { reference: mission.reference } }" class="btn btn--block btn--ghost">Télécharger le CR en PDF</router-link>
         <p v-if="frozen && mission.needsSync === 1" class="small" role="status">
           {{ online ? 'Envoi en cours ou en attente de réessai.' : 'Hors ligne : le CR partira dès le retour du réseau.' }}
         </p>

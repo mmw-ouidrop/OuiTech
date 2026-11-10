@@ -107,7 +107,7 @@ Réservé au rôle `support` (`FORBIDDEN_ROLE` sinon). L'intégration Notion doi
 ## POST `uploadMedia`
 `{ action, session, fileData (base64 ou data:URL), fileName, mimeType, mediaId, reference }`
 → `{ fileId, name, size, duplicate }`. Idempotent par `mediaId`. Dépose la photo dans
-`<dossier racine>/<référence>/` (transit temporaire, sans partage public). JPEG/PNG/WebP/GIF seulement.
+`<dossier racine>/<référence>/` (transit temporaire, sans partage public). Pièces jointes acceptées : JPEG/PNG/WebP/GIF, PDF, vidéos (`video/*`) ; 20 Mo maximum (HEIC converti en JPEG par la PWA). À la synchro (`photos.add[].fileName`), Notion reçoit un bloc `image`, `video` ou `pdf` selon le type.
 
 ## POST `syncReport`
 Corps :

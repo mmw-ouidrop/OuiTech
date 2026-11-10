@@ -88,3 +88,12 @@ textarea.input { padding: var(--s-3) var(--s-4); min-height: 120px; line-height:
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+/* Impression / « Enregistrer en PDF » : on n'imprime que le contenu de l'écran, sans menu ni bandeaux. */
+@media print {
+  .drawer, .scrim, .top, .banner, .no-print, .fab { display: none !important; }
+  .shell__main { margin-left: 0 !important; }
+  body { background: #fff !important; color: #000 !important; }
+  .container, .container--wide { width: 100% !important; margin: 0 !important; }
+  @page { margin: 14mm 12mm; }
+}

@@ -10,3 +10,8 @@
 | `bases-notion.md` | Bases Notion utilisées, colonnes et capacités d'intégration |
 
 Les fichiers de `templates/` sont contrôlés par les tests (`gas/tests/template-example.test.mjs`) : lecture sans avertissement et synchronisation.
+
+
+## Pièces jointes et PDF du CR
+- Un champ `image_upload` accepte photos (HEIC converti en JPEG), PDF et vidéos, 20 Mo max par fichier (limite Notion ; 5 Mo sur un espace Notion gratuit).
+- Bouton « Télécharger le CR en PDF » (fiche) : page imprimable `#/m/<réf>/pdf` générée hors ligne depuis l'appareil ; « Enregistrer en PDF » dans la fenêtre d'impression. Photos intégrées ; vidéos/PDF listés par leur nom.

@@ -79,7 +79,7 @@
 
 // Version du code. `?action=ping` la renvoie : si elle ne correspond pas à celle de l'archive reçue, le déploiement
 // (« Gérer les déploiements ▸ Nouvelle version ») n'a pas été mis à jour.
-const SCRIPT_VERSION = '2026-11-05.1';
+const SCRIPT_VERSION = '2026-11-10.1';
 
 const NOTION_API = 'https://api.notion.com/v1';
 
@@ -124,7 +124,7 @@ const CHOICE_TYPES = ['radio_group', 'select', 'checkbox_group'];
 const COMPONENT_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const RESERVED_ID_RE = /^(u_|todo_|S:)/;
 
-const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;   // taille décodée max d'une photo
+const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;   // taille décodée max d'un fichier (limite Notion)
 const MAX_TEMPLATE_HTML = 100000;              // caractères max d'un bloc HTML du template
 const MAX_NEST_DEPTH = 4;                    // profondeur de lecture (toggles, listes à puces imbriquées…)
 const MAX_TEMPLATE_CALLS = 80;               // requêtes Notion maximum pour lire le contenu d'une page
@@ -836,8 +836,8 @@ function uploadMedia_(b) {
   }
   const mimeType = String(b.mimeType || 'image/jpeg').toLowerCase();
   // HEIC/HEIF exclus : la PWA convertit en JPEG avant l'envoi.
-  if (!IMAGE_MIME_RE.test(mimeType)) {
-    throw new ApiError_('UNSUPPORTED_TYPE', 'Type non supporté : ' + mimeType + ' (jpeg, png, webp, gif)');
+  if (!ATTACH_MIME_RE.test(mimeType)) {
+    throw new ApiError_('UNSUPPORTED_TYPE', 'Type non supporté : ' + mimeType + ' (photo, PDF ou vidéo)');
   }
 
   let b64 = String(b.fileData);
@@ -877,6 +877,16 @@ function uploadMedia_(b) {
 }
 
 const IMAGE_MIME_RE = /^image\/(jpeg|png|webp|gif)$/;
+// Pièces jointes d'un CR : photos, PDF, vidéos.
+const ATTACH_MIME_RE = /^(image\/(jpeg|png|webp|gif)|application\/pdf|video\/[\w.+-]+)$/;
+
+// Type de bloc Notion pour un type MIME.
+function blockTypeForMime_(mime) {
+  if (/^image\//.test(mime)) return 'image';
+  if (/^video\//.test(mime)) return 'video';
+  if (mime === 'application/pdf') return 'pdf';
+  return 'file';
+}
 
 function safeName_(s) {
   return String(s).replace(/[^\w.\-]+/g, '_').replace(/^_+|_+$/g, '') || 'file';
@@ -962,10 +972,10 @@ function notionUploadFromDrive_(fileId) {
 
   const blob = file.getBlob().setName(file.getName());
   const mime = String(blob.getContentType() || '').toLowerCase();
-  if (!IMAGE_MIME_RE.test(mime)) {
+  if (!ATTACH_MIME_RE.test(mime)) {
     throw new ApiError_('UNSUPPORTED_TYPE', 'Type non supporté : ' + mime, { fileId: fileId });
   }
-  return notionUploadBlob_(blob);
+  return { id: notionUploadBlob_(blob), mime: mime, name: file.getName() };
 }
 
 // API Notion « File Upload » (fichiers ≤ 20 Mo) :

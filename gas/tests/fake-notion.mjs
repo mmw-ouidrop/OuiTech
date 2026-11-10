@@ -63,7 +63,7 @@ export function makeWorld() {
     const id = w.id();
     const { children, ...rest } = spec[spec.type];
     const b = { object: 'block', id, type: spec.type, parent: parentId, archived: false, [spec.type]: withPlain(rest) };
-    if (spec.type === 'image' && !rest.external && !rest.file) {
+    if (['image', 'video', 'pdf', 'file'].includes(spec.type) && !rest.external && !rest.file) {
       const fu = rest.file_upload && w.uploads[rest.file_upload.id];
       assert.ok(fu && fu.sent, 'image : file_upload inconnu ou non envoyé');
       assert.ok(!fu.attached, 'image : file_upload déjà utilisé');
@@ -480,8 +480,8 @@ export function phone(w, name, clientId, skewMs = 0) {
     },
     poll() { return get({ action: 'getReport', pageId: PAGE, sinceRev: p.baseRev, clientId, name }); },
     at: (offsetMs = 0) => w.now + skewMs + offsetMs,
-    upload(mediaId) {
-      return post({ action: 'uploadMedia', fileData: PNG_B64, fileName: mediaId + '.png', mimeType: 'image/png', mediaId, reference: 'FI-252' }).data.fileId;
+    upload(mediaId, name, mimeType) {
+      return post({ action: 'uploadMedia', fileData: PNG_B64, fileName: name || mediaId + '.png', mimeType: mimeType || 'image/png', mediaId, reference: 'FI-252' }).data.fileId;
     }
   };
   return p;
