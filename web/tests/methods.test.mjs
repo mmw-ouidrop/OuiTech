@@ -11,7 +11,7 @@ import { createMethodsService, groupMethods, groupNodes, embedUrl, linkifySegmen
 class ApiError extends Error { constructor(code, message) { super(message); this.code = code } }
 
 const here = path.dirname(fileURLToPath(import.meta.url))
-const SRC = ['Code.gs', 'Report.gs', 'Auth.gs', 'Methods.gs'].map((f) => fs.readFileSync(path.join(here, '../../gas', f), 'utf8'))
+const SRC = ['Code.gs', 'Report.gs', 'Auth.gs', 'Methods.gs', 'Machines.gs', 'Racks Casiers.gs', 'Actions.gs', 'Summary.gs'].map((f) => fs.readFileSync(path.join(here, '../../gas', f), 'utf8'))
 let seq = 0
 const rt = (t) => [{ type: 'text', text: { content: t } }]
 const img = (url) => ({ type: 'image', image: { type: 'file', file: { url }, caption: [] } })

@@ -178,7 +178,7 @@ photoErrors[], photosRemaining, cleanup`.
 
 ## Synthèse écrite sur la page de la fiche (Summary.gs)
 À chaque synchro du CR et à chaque `actionComment` :
-- colonne **« Compte rendu »** (texte) : 1) ACTIONS À RÉALISER (titre — état, commentaires datés et signés) 2) COMPTE RENDU D'INTERVENTION (statut, sections, champs renseignés, nombre de fichiers par champ photo) ;
+- colonne **« Compte rendu OuiTech »** (texte) : 1) ACTIONS À RÉALISER (titre — état, commentaires datés et signés) 2) COMPTE RENDU D'INTERVENTION (statut, sections, champs renseignés, nombre de fichiers par champ photo) ;
 - colonne **« Photos d'intervention »** (fichiers) : une copie de chaque photo du CR (les fichiers déjà présents sont conservés ; une photo supprimée du CR en est retirée).
 Noms modifiables : propriétés de script `SUMMARY_PROP_NAME`, `PHOTOS_PROP_NAME`. Colonne absente = ignorée sans erreur ; `testSummary()` (éditeur Apps Script) vérifie les deux colonnes.
 Les actions sont relues au plus toutes les 90 s (cache) sauf à la validation et après un commentaire d'action.

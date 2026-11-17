@@ -1,4 +1,4 @@
-// Synthèse sur la fiche : colonne « Compte rendu » (actions + CR) et colonne « Photos d’intervention ».
+// Synthèse sur la fiche : colonne « Compte rendu OuiTech » (actions + CR) et colonne « Photos d’intervention ».
 import test from 'node:test';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -17,30 +17,30 @@ function seed() {
   const action = w.addMachine({ props: { Name: { type: 'title', title: t('Contrôle ALK') } } });
   w.pageProps = {
     'Actions prévues': { type: 'relation', relation: [{ id: action.id }] },
-    'Compte rendu': { type: 'rich_text', rich_text: [] },
+    'Compte rendu OuiTech': { type: 'rich_text', rich_text: [] },
     'Photos d’intervention': { type: 'files', files: [{ name: 'ancienne.png', type: 'file', file: { url: 'https://notion.files/old' } }] }
   };
   return { w, action };
 }
 
-test('« Compte rendu » : actions (état + commentaires) puis CR renseigné, tenu à jour', () => {
+test('« Compte rendu OuiTech » : actions (état + commentaires) puis CR renseigné, tenu à jour', () => {
   const { w, action } = seed();
   const a = phone(w, 'Karim Benali', 'cA'); a.load();
   const r0 = a.sync({ fields: fields({ etat_materiel: 'Neuf' }, a.at()) });
-  const s1 = plainOf(w.pageProps['Compte rendu']);
+  const s1 = plainOf(w.pageProps['Compte rendu OuiTech']);
   assert.match(s1, /^ACTIONS À RÉALISER\n▸ Contrôle ALK — Sans état\n/);
   assert.match(s1, /COMPTE RENDU D’INTERVENTION FI-252 — En cours/);
   assert.match(s1, /État du matériel : Neuf|etat_materiel|Neuf/);
   // un commentaire d'action met aussitôt la synthèse à jour (état + texte, auteur)
   const r = api(w).post({ action: 'actionComment', id: 'k1', missionId: PAGE, pageId: action.nid, reference: 'FI-252', name: 'Romane Perez', state: 'done', text: 'Pas d’amorces de rupture' });
   assert.equal(r.ok, true, JSON.stringify(r));
-  const s2 = plainOf(w.pageProps['Compte rendu']);
+  const s2 = plainOf(w.pageProps['Compte rendu OuiTech']);
   assert.match(s2, /▸ Contrôle ALK — Terminée\n   • .* · Romane Perez · Terminée : Pas d’amorces de rupture\n/);
   // gras sur les titres
-  assert.ok(w.pageProps['Compte rendu'].rich_text.some((x) => x.annotations && x.annotations.bold && /ACTIONS À RÉALISER/.test(x.plain_text)));
+  assert.ok(w.pageProps['Compte rendu OuiTech'].rich_text.some((x) => x.annotations && x.annotations.bold && /ACTIONS À RÉALISER/.test(x.plain_text)));
   // validation : statut repris
   a.sync({ status: { value: 'validated', at: a.at(5) } });
-  assert.match(plainOf(w.pageProps['Compte rendu']), /Validé par Karim Benali/);
+  assert.match(plainOf(w.pageProps['Compte rendu OuiTech']), /Validé par Karim Benali/);
 });
 
 test('« Photos d’intervention » : chaque photo du CR y est ajoutée (sans toucher aux fichiers existants), retirée si supprimée', () => {
@@ -58,7 +58,7 @@ test('« Photos d’intervention » : chaque photo du CR y est ajoutée (sans to
   assert.equal(names.length, 3);
   assert.equal(names[0], 'ancienne.png');
   assert.ok(names.slice(1).every((n) => /^Prendre en photo.* · dia-000[12]\.jpg$/.test(n)), names.join(' | '));
-  assert.match(plainOf(w.pageProps['Compte rendu']), /: 2 fichiers/);
+  assert.match(plainOf(w.pageProps['Compte rendu OuiTech']), /: 2 fichiers/);
   // rejeu : pas de doublon
   a.sync({ photos: { add } });
   assert.equal(w.pageProps['Photos d’intervention'].files.length, 3);
@@ -76,11 +76,11 @@ test('colonnes absentes : la synchro réussit sans bruit ; une erreur Notion sur
   const r = a.sync({ fields: fields({ etat_materiel: 'Neuf' }, a.at()) });
   assert.equal(r.ok, true);
   assert.ok(!r.data.warnings.some((x) => /SUMMARY/.test(x.code)));
-  w.pageProps = { 'Compte rendu': { type: 'rich_text', rich_text: [] } };
+  w.pageProps = { 'Compte rendu OuiTech': { type: 'rich_text', rich_text: [] } };
   w.pageProps.Fake = null;
   delete w.pageProps.Fake;
   const orig = w.pageProps;
-  w.pageProps = new Proxy(orig, { get: (o, k) => k === 'Compte rendu' ? { type: 'title', title: [] } : o[k] });   // mauvais type
+  w.pageProps = new Proxy(orig, { get: (o, k) => k === 'Compte rendu OuiTech' ? { type: 'title', title: [] } : o[k] });   // mauvais type
   const r2 = a.sync({ fields: fields({ etat_materiel: 'Usagé' }, a.at(2)) });
   assert.equal(r2.ok, true, JSON.stringify(r2));
 });

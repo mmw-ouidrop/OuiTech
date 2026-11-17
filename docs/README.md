@@ -22,5 +22,5 @@ choisit un état (À faire / En cours / Terminée / Impossible) et peut commente
 même hors ligne (file d'envoi). Nécessite les capacités « Read comments » et « Insert comments » de l'intégration. Noms de colonnes modifiables : propriétés de script `ACTIONS_*` (voir en-tête d'Actions.gs).
 
 ## Synthèse sur la fiche Notion
-Colonnes à créer dans la base des fiches : **Compte rendu** (Texte) et **Photos d'intervention** (Fichiers et médias). Elles sont remplies automatiquement (voir gas/API.md).
+Colonnes à créer dans la base des fiches : **Compte rendu OuiTech** (Texte) et **Photos d'intervention** (Fichiers et médias). Elles sont remplies automatiquement (voir gas/API.md).
 Le template d'un CR créé depuis l'éditeur est rangé dans un toggle « Template CR intervention » (replié) ; les consignes déjà présentes dans la page restent intactes.

@@ -12,7 +12,7 @@ import { groupMachines, machineTone, mapLinks, formatSince, inactiveCount } from
 class ApiError extends Error { constructor(code, message) { super(message); this.code = code } }
 
 const here = path.dirname(fileURLToPath(import.meta.url))
-const SRC = ['Code.gs', 'Report.gs', 'Auth.gs', 'Methods.gs', 'Machines.gs'].map((f) => fs.readFileSync(path.join(here, '../../gas', f), 'utf8'))
+const SRC = ['Code.gs', 'Report.gs', 'Auth.gs', 'Methods.gs', 'Machines.gs', 'Racks Casiers.gs', 'Actions.gs', 'Summary.gs'].map((f) => fs.readFileSync(path.join(here, '../../gas', f), 'utf8'))
 let seq = 0
 const t = (s) => [{ plain_text: s }]
 const PNG = [...Buffer.from(PNG_B64, 'base64')]

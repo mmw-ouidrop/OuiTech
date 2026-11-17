@@ -1,7 +1,7 @@
 /**
  * SYNTHÈSE SUR LA PAGE DE LA FICHE — deux colonnes de la base des fiches, tenues à jour automatiquement :
  *
- *  · « Compte rendu » (texte)        : 1) les actions à réaliser (titre, état, commentaires des techniciens)
+ *  · « Compte rendu OuiTech » (texte)        : 1) les actions à réaliser (titre, état, commentaires des techniciens)
  *                                      2) tout le compte rendu saisi (sections, champs renseignés, nombre de photos)
  *  · « Photos d'intervention » (fichiers) : toutes les photos ajoutées dans le CR (une copie de chaque photo)
  *
@@ -9,11 +9,11 @@
  *  ignorée avec un avertissement ; une erreur ici ne fait jamais échouer la synchro.
  *
  *  Propriétés de script (facultatives) :
- *    SUMMARY_PROP_NAME   Défaut : Compte rendu
+ *    SUMMARY_PROP_NAME   Défaut : Compte rendu OuiTech
  *    PHOTOS_PROP_NAME    Défaut : Photos d’intervention
  */
 
-const SUMMARY_PROP_DEFAULT = 'Compte rendu';
+const SUMMARY_PROP_DEFAULT = 'Compte rendu OuiTech';
 const PHOTOS_PROP_DEFAULT = 'Photos d’intervention';
 const SUMMARY_ACTIONS_TTL = 90;          // secondes : les actions (état, commentaires) sont relues au plus toutes les 90 s
 const SUMMARY_MAX_OBJECTS = 100;         // limite Notion : 100 morceaux de texte par colonne
@@ -138,7 +138,7 @@ function summaryActions_(page, force) {
 
 /* ───────────────────────────── Écriture sur la page ───────────────────────────── */
 
-// Met à jour « Compte rendu » et, si demandé, ajoute / retire des photos dans « Photos d'intervention ».
+// Met à jour « Compte rendu OuiTech » et, si demandé, ajoute / retire des photos dans « Photos d'intervention ».
 //  photos = { add: [{ id (file_upload), name }], remove: [noms] }
 function writePageSummary_(pageId, state, opts) {
   opts = opts || {};
