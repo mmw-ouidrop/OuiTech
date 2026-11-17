@@ -111,6 +111,7 @@ export const api = {
   // Envois qui passent par la file d'attente locale (lib/outbox.js) : `id` rend le rejeu sans effet.
   rackDiagnosis: (p) => post({ action: 'rackDiagnosis', ...p }, 45000),
   methodComment: (p) => post({ action: 'methodComment', ...p }, 45000),
+  getActions: (id) => get({ action: 'getActions', id }, 45000),
   actionComment: (p) => post({ action: 'actionComment', ...p }, 45000),   // état + commentaire d'une action liée à la fiche
   templateGet: (id) => get({ action: 'templateGet', id }, 45000),          // profil support
   templateSave: (p) => post({ action: 'templateSave', ...p }, 90000),       // profil support

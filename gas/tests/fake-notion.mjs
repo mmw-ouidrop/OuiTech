@@ -257,6 +257,29 @@ export function makeWorld() {
       }
       m = p0.match(/^\/users\/([^/]+)$/);
       if (m && method === 'GET') return res(200, { id: m[1], name: (w.users || {})[m[1]] || null });
+      if (method === 'PATCH' && p0 === `/pages/${PAGE}`) {
+        w.pageProps = w.pageProps || {};
+        Object.entries(body.properties || {}).forEach(([k, v]) => {
+          assert.ok(w.pageProps[k], 'colonne inconnue : ' + k);
+          if (v.rich_text) {
+            assert.ok(v.rich_text.length <= 100, 'rich_text : 100 morceaux maximum');
+            v.rich_text.forEach((t) => assert.ok(t.text.content.length <= 2000, 'rich_text : 2000 caractères maximum'));
+            w.pageProps[k] = { type: 'rich_text', rich_text: v.rich_text.map((t) => ({ ...t, plain_text: t.text.content })) };
+          }
+          if (v.files) {
+            w.pageProps[k] = { type: 'files', files: v.files.map((x) => {
+              if (x.type !== 'file_upload') return x;
+              const fu = w.uploads[x.file_upload.id];
+              assert.ok(fu && fu.sent, 'files : file_upload inconnu ou non envoyé');
+              assert.ok(!fu.attached, 'files : file_upload déjà utilisé');
+              fu.attached = true;
+              return { name: x.name, type: 'file', file: { url: 'https://notion.files/' + x.file_upload.id } };
+            }) };
+          }
+        });
+        w.propPatches = (w.propPatches || 0) + 1;
+        return res(200, { id: dash(PAGE), properties: w.pageProps });
+      }
       m = p0.match(/^\/pages\/([^/]+)$/);
       if (m && method === 'PATCH') {
         const page = [...w.methodPages, ...w.machinePages].find((p) => norm(p.id) === norm(m[1]));

@@ -761,6 +761,7 @@ function syncReport_(b) {
   const adds = cleanPhotoAdds_(c.ch.photos && c.ch.photos.add);
   const known = cacheGetState_(pageId);
   c.uploads = {};
+  c.uploads2 = {};                                          // 2e envoi des photos, pour la colonne « Photos d'intervention »
   c.photoErrors = [];
   let remaining = 0;
   let sent = 0;
@@ -769,6 +770,9 @@ function syncReport_(b) {
     if (sent >= MAX_PHOTOS_PER_CALL) { remaining++; return; }
     try {
       c.uploads[p.mediaId] = notionUploadFromDrive_(p.driveFileId);
+      if (blockTypeForMime_(c.uploads[p.mediaId].mime) === 'image') {
+        try { c.uploads2[p.mediaId] = notionUploadFromDrive_(p.driveFileId); } catch (err2) { /* la copie dans la colonne est facultative */ }
+      }
       sent++;
     } catch (err) {
       if (!(err instanceof ApiError_)) throw err;
@@ -848,6 +852,8 @@ function applyChanges_(c) {
   const changedItems = {};      // id → true : bloc à mettre à jour
   let headerChanged = isNew;
   let lastAt = 0;
+  const propAdd = [];            // copies à ajouter dans la colonne « Photos d'intervention »
+  const propRemove = [];         // noms à en retirer
 
   // 1) Schéma
   const ms = mergeSchema_(state.schema, c.schema);
@@ -985,7 +991,10 @@ function applyChanges_(c) {
     const e = state.blocks[id];
     if (e) { deleteBlockQuiet_(e.b); delete state.blocks[id]; }
     Object.keys(state.photos).forEach(function (m) {
-      if (state.photos[m].f === id && !state.photos[m].del) state.photos[m].del = { by: c.by, at: lastAt || c.serverNow };
+      if (state.photos[m].f === id && !state.photos[m].del) {
+        state.photos[m].del = { by: c.by, at: lastAt || c.serverNow };
+        if (state.photos[m].pn) propRemove.push(state.photos[m].pn);
+      }
     });
   });
   if ((removedCustom.length || movedCustom.length) && state.blocks[CUSTOM_SECTION_ID] &&
@@ -1014,6 +1023,7 @@ function applyChanges_(c) {
     if (!p || p.del) return;
     if (frozen) { rejected.photos.push(raw.mediaId); return; }
     deleteBlockQuiet_(p.b);
+    if (p.pn) propRemove.push(p.pn);
     p.del = { by: c.by, at: atCorr_(raw.at, c) };
     applied.photosRemoved++;
     mutated = true;
@@ -1039,6 +1049,13 @@ function applyChanges_(c) {
     const img = appendPlain_(entry.b, [blockDef])[0];
     const at = atCorr_(p.at, c);
     state.photos[p.mediaId] = { f: p.componentId, b: img.id, by: c.by, at: at };
+    const copy = c.uploads2[p.mediaId];
+    if (copy && bt === 'image') {
+      const ext = (String(p.fileName || '').match(/\.[A-Za-z0-9]{2,5}$/) || ['.jpg'])[0];
+      const pn = (String(item.label || 'Photo').slice(0, 70) + ' · ' + String(p.mediaId).slice(-8) + ext).slice(0, 100);
+      state.photos[p.mediaId].pn = pn;
+      propAdd.push({ id: copy.id, name: pn });
+    }
     driveToClean.push(p.driveFileId);
     applied.photos++;
     mutated = true;
@@ -1056,6 +1073,12 @@ function applyChanges_(c) {
     writeState_(pageId, state);
   }
   touchPresence_(pageId, c.clientId, c.by);
+
+  // 8) Synthèse sur la page de la fiche : colonnes « Compte rendu » et « Photos d'intervention » (jamais bloquant)
+  if (mutated) {
+    writePageSummarySafe_(pageId, state, { forceActions: applied.status, reference: c.reference, photos: { add: propAdd, remove: propRemove } })
+      .forEach(function (w) { warnings.push(w); });
+  }
 
   if (rejected.fields.length || rejected.custom.length || rejected.photos.length) rejected.reason = 'VALIDATED';
 

@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { makeWorld, run, api, phone, PAGE, ROOT, PNG_B64 } from './fake-notion.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const SRC = ['Code.gs', 'Report.gs', 'Auth.gs', 'Methods.gs', 'Machines.gs', 'Racks Casiers.gs', 'Actions.gs'].map((f) => fs.readFileSync(path.join(here, '..', f), 'utf8'));
+const SRC = ['Code.gs', 'Report.gs', 'Auth.gs', 'Methods.gs', 'Machines.gs', 'Racks Casiers.gs', 'Actions.gs', 'Summary.gs'].map((f) => fs.readFileSync(path.join(here, '..', f), 'utf8'));
 
 function world() {
   const w = makeWorld();
@@ -302,7 +302,7 @@ test('photos : lots de 6, reste signalé, images sous le bon champ, transit Driv
   assert.ok(files.every((f) => w.drive[f].trashed));
   assert.equal(w.folders[folder].trashed, true);
   assert.equal(w.folders[ROOT].trashed, false);
-  assert.equal(Object.values(w.uploads).length, 8, 'chaque photo n’est transférée qu’une fois');
+  assert.equal(Object.values(w.uploads).length, 16, 'chaque photo est transférée deux fois : bloc du CR + colonne « Photos d’intervention »');
 
   // rejeu : rien de plus dans Notion
   const r3 = a.sync({ photos: { add } });

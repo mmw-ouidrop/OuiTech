@@ -24,7 +24,7 @@
  *  PRINCIPE D'ÉCRITURE : on ne touche qu'à ce qui change. Un bloc inchangé n'est pas réécrit (sa mise en forme Notion est
  *  conservée) ; un bloc modifié est mis à jour en place ; un bloc déplacé est recréé à sa nouvelle place ; un bloc retiré est
  *  supprimé. Les blocs « locked » ne sont jamais recréés. Le rapport et ses données ne sont jamais touchés.
- *  Si la page n'a encore aucun contenu, un toggle « Template CR intervention » est créé pour le ranger.
+ *  Si la page n'a pas encore de template (vide ou seulement des consignes), un toggle « Template CR intervention » est créé pour le ranger.
  * ============================================================================
  */
 
@@ -332,10 +332,16 @@ function tplSaveLocked_(body) {
   const warnings = [];
   const stats = { created: 0, updated: 0, deleted: 0, moved: 0 };
 
-  // Page sans aucun contenu : on crée le toggle « Template » qui accueillera le formulaire.
-  if (!ctx.container && !ctx.current.length && items.length) {
-    const made = tplInsert_(page.id, null, [{ object: 'block', type: 'toggle', toggle: { rich_text: rt_(TPL_NEW_CONTAINER_TITLE, { bold: true }) } }], warnings);
-    ctx = { page: page, container: { id: made[0].id }, parentId: made[0].id, current: [], outside: 0 };
+  // Pas encore de template (page vide, ou seulement des consignes) : on crée le toggle « Template » qui accueille le formulaire,
+  // pour qu'il reste replié dans la page. Les blocs déjà présents (consignes…) restent où ils sont, intacts.
+  const hasFormular = ctx.current.some(function (b) { const t = tplItemOf_(b).t; return t === 'field' || t === 'todo'; });
+  if (!ctx.container && !hasFormular && items.length) {
+    const outsideRefs = {};
+    ctx.current.forEach(function (b) { outsideRefs[plainId_(b.id)] = true; });
+    const made = tplInsert_(page.id, ctx.current.length ? ctx.current[ctx.current.length - 1].id : null,
+      [{ object: 'block', type: 'toggle', toggle: { rich_text: rt_(TPL_NEW_CONTAINER_TITLE, { bold: true }) } }], warnings);
+    ctx = { page: page, container: { id: made[0].id }, parentId: made[0].id, current: [], outside: Object.keys(outsideRefs).length };
+    items.splice(0, items.length, ...items.filter(function (it) { return !it.ref || !outsideRefs[it.ref]; }));
   }
 
   const index = {};

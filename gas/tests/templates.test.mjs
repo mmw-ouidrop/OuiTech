@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { makeWorld, run, api, PAGE } from './fake-notion.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const FILES = ['Code.gs', 'Report.gs', 'Auth.gs', 'Methods.gs', 'Machines.gs', 'Racks Casiers.gs', 'Templates.gs', 'Actions.gs'];
+const FILES = ['Code.gs', 'Report.gs', 'Auth.gs', 'Methods.gs', 'Machines.gs', 'Racks Casiers.gs', 'Templates.gs', 'Actions.gs', 'Summary.gs'];
 const SRC = FILES.map((f) => fs.readFileSync(path.join(here, '..', f), 'utf8'));
 
 function world(empty = false) {
@@ -89,6 +89,19 @@ test('page vide : un toggle « Template CR intervention » est créé et reçoit
   assert.deepEqual(kinds(w, top[0].id), ['heading_1:Matériel', 'code:photo', 'bulleted_list_item:Point']);
   assert.equal(r.data.container, true);
   assert.equal(api(w).get({ action: 'getIntervention', id: 'FI-252' }).data.schema.length, 2);
+});
+
+test('page avec seulement des consignes : le formulaire va dans un toggle replié, les consignes restent intactes', () => {
+  const w = world(true);
+  w.seedChildren(PAGE, [para('Consigne : prévenir le gardien.'), head('Contexte', 2)]);
+  const cur = get(w).data.items;
+  const r = save(w, [...cur, { t: 'section', level: 1, text: 'Contrôles' }, { t: 'field', type: 'text', id: 'note', label: 'Note' }]);
+  assert.equal(r.ok, true, JSON.stringify(r));
+  const top = w.childrenOf(PAGE);
+  assert.deepEqual(top.map((b) => b.type), ['paragraph', 'heading_2', 'toggle']);
+  assert.equal(w.text(top[0]), 'Consigne : prévenir le gardien.');
+  assert.deepEqual(kinds(w, top[2].id), ['heading_1:Contrôles', 'code:note']);
+  assert.equal(r.data.container, true);
 });
 
 test('un toggle « Template » existant est le conteneur ; le rapport n’est jamais touché', () => {

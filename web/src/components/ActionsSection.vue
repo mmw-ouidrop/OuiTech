@@ -6,12 +6,12 @@ import FileTiles from './FileTiles.vue'
 import DictationButton from './DictationButton.vue'
 import { enqueue, pendingEntries, retryEntry, doneTick } from '../lib/outboxApp.js'
 import { named, displayName } from '../lib/session.js'
-import { getIntervention, logActionEntry, missionMediaStore } from '../db.js'
+import { getIntervention, logActionEntry, setActions, missionMediaStore } from '../db.js'
 import { api } from '../lib/api.js'
 import { online } from '../lib/online.js'
 import { createMediaService } from '../lib/methods.js'
 import { mergeText } from '../lib/dictation.js'
-import { ACTION_STATES, stateLabel, currentState, progress } from '../lib/actions.js'
+import { ACTION_STATES, stateLabel, currentState, progress, mergeEntries } from '../lib/actions.js'
 import { formatDateTime } from '../lib/format.js'
 
 const props = defineProps({
@@ -33,6 +33,10 @@ const service = computed(() => createMediaService({
 
 const draft = (id) => (drafts[id] = drafts[id] || { state: '', text: '' })
 const stat = computed(() => progress(props.actions, log.value))
+const entriesOf = (a) => mergeEntries(a.entries, log.value[a.id])
+const stateOf = (a) => currentState(entriesOf(a))
+const refreshing = ref(false)
+const refreshError = ref('')
 const failedIds = computed(() => new Set(pendingEntries.value.filter((e) => e.status === 'failed').map((e) => e.id)))
 const isFailed = (entryId) => failedIds.value.has(entryId)
 
@@ -40,8 +44,25 @@ async function reload() {
   const rec = await getIntervention(props.missionId)
   log.value = (rec && rec.actionLog) || {}
 }
-onMounted(reload)
-watch(doneTick, reload)
+// Relit depuis Notion l'état et les commentaires de tous les techniciens (sans toucher au CR).
+async function refreshActions() {
+  if (!online.value || refreshing.value || !props.actions.length) return
+  refreshing.value = true
+  refreshError.value = ''
+  try {
+    const r = await api.getActions(props.reference)
+    await setActions(props.missionId, r.actions)
+    const w = (r.warnings || []).find((x) => x.code === 'ACTION_COMMENTS_UNREADABLE')
+    if (w) refreshError.value = w.message
+  } catch (e) {
+    refreshError.value = e.code === 'NETWORK' ? '' : e.message
+  } finally {
+    refreshing.value = false
+  }
+}
+onMounted(() => { reload(); refreshActions() })
+watch(online, (on) => { if (on) refreshActions() })
+watch(doneTick, () => { reload(); refreshActions() })
 watch(() => props.missionId, reload)
 
 function pick(a, value) {
@@ -79,12 +100,13 @@ const sentLabel = (e) => (e.sent ? 'Envoyé' : isFailed(e.id) ? 'Non envoyé' : 
       Actions à réaliser
       <span class="chip">{{ stat.done }} / {{ stat.total }}</span>
     </h3>
+    <p v-if="refreshError" class="note small" role="status">{{ refreshError }}</p>
     <p v-if="!named" class="note small">Renseignez votre prénom et nom dans <router-link to="/reglages">Réglages</router-link> pour envoyer un état ou un commentaire.</p>
 
     <details v-for="a in actions" :key="a.id" class="act" :open="open[a.id]" @toggle="open[a.id] = $event.target.open">
       <summary class="act__sum">
         <span class="act__name">{{ a.title }}</span>
-        <span v-if="currentState(log[a.id])" class="chip" :class="'chip--' + currentState(log[a.id])">{{ stateLabel(currentState(log[a.id])) }}</span>
+        <span v-if="stateOf(a)" class="chip" :class="'chip--' + stateOf(a)">{{ stateLabel(stateOf(a)) }}</span>
         <span v-else class="chip chip--none">Sans état</span>
       </summary>
 
@@ -120,10 +142,10 @@ const sentLabel = (e) => (e.sent ? 'Envoyé' : isFailed(e.id) ? 'Non envoyé' : 
           <button type="button" class="btn" :disabled="(!draft(a.id).state && !draft(a.id).text.trim()) || busy[a.id] || !named" @click="send(a)">Envoyer</button>
         </div>
 
-        <ul v-if="(log[a.id] || []).length" class="act__log">
-          <li v-for="e in [...log[a.id]].reverse()" :key="e.id" class="act__entry">
+        <ul v-if="entriesOf(a).length" class="act__log">
+          <li v-for="e in [...entriesOf(a)].reverse()" :key="e.id" class="act__entry">
             <p class="small muted">
-              <strong>{{ e.by }}</strong> · {{ formatDateTime(e.at) }} · <span :class="{ alert: isFailed(e.id) }">{{ sentLabel(e) }}</span>
+              <strong>{{ e.by }}</strong> · {{ formatDateTime(e.at) }}<template v-if="e.local"> · <span :class="{ alert: isFailed(e.id) }">{{ sentLabel(e) }}</span></template>
               <button v-if="isFailed(e.id)" type="button" class="btn btn--ghost" @click="retryEntry(e.id)">Réessayer</button>
             </p>
             <p class="act__text"><span v-if="e.state" class="chip" :class="'chip--' + e.state">{{ stateLabel(e.state) }}</span> {{ e.text }}</p>

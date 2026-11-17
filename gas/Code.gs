@@ -79,7 +79,7 @@
 
 // Version du code. `?action=ping` la renvoie : si elle ne correspond pas à celle de l'archive reçue, le déploiement
 // (« Gérer les déploiements ▸ Nouvelle version ») n'a pas été mis à jour.
-const SCRIPT_VERSION = '2026-11-10.2';
+const SCRIPT_VERSION = '2026-11-17.1';
 
 const NOTION_API = 'https://api.notion.com/v1';
 
@@ -191,6 +191,8 @@ function doGet(e) {
         return ok_(getMachineMedia_(p));
       case 'missionMedia':
         return ok_(getMissionMedia_(p));
+      case 'getActions':
+        return ok_(getActions_(p));
       case 'racksOverview':
         return ok_(getRacksOverview_(p));
       case 'racks':

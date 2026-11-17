@@ -223,6 +223,11 @@ export function createStore(name = 'ouidrop-interventions') {
       return log
     })
 
+  // Remplace la liste des actions (relue depuis Notion : état et commentaires de tous les techniciens).
+  const setActions = async (id, actions) => {
+    if (Array.isArray(actions)) await db.interventions.update(id, { actions })
+  }
+
   const markActionSent = (id, actionId, entryId) =>
     db.transaction('rw', db.interventions, async () => {
       const rec = await db.interventions.get(id)
@@ -591,7 +596,7 @@ export function createStore(name = 'ouidrop-interventions') {
     methodsCatalog: methodsCat, machinesCatalog: machinesCat, missionMediaStore,
     getRacksOverview, saveRacksOverview, touchRacksOverview, getRacksSite, listRacksSites, saveRacksSite, touchRacksSite, clearRacksCache,
     outboxAdd, outboxList, outboxUpdate, outboxRemove,
-    db, getIntervention, listInterventions, findByReference, listPhotos, saveMission, setFields, logActionEntry, markActionSent,
+    db, getIntervention, listInterventions, findByReference, listPhotos, saveMission, setFields, logActionEntry, markActionSent, setActions,
     addPhoto, removePhoto, addCustomField, removeCustomField, moveCustomField, setReportStatus, resolveConflict,
     dismissNotice, listNeedingSync, beginSync, endSync, setPhotoUploaded, failPhoto,
     applySyncResult, applyPull, setEditors, markServerLost, deleteIntervention
@@ -607,7 +612,7 @@ export const {
   methodsCatalog, machinesCatalog, missionMediaStore,
   getRacksOverview, saveRacksOverview, touchRacksOverview, getRacksSite, listRacksSites, saveRacksSite, touchRacksSite, clearRacksCache,
   outboxAdd, outboxList, outboxUpdate, outboxRemove,
-  db, getIntervention, listInterventions, findByReference, listPhotos, saveMission, setFields, logActionEntry, markActionSent,
+  db, getIntervention, listInterventions, findByReference, listPhotos, saveMission, setFields, logActionEntry, markActionSent, setActions,
   addPhoto, removePhoto, addCustomField, removeCustomField, moveCustomField, setReportStatus, resolveConflict,
   dismissNotice, listNeedingSync, beginSync, endSync, setPhotoUploaded, failPhoto,
   applySyncResult, applyPull, setEditors, markServerLost, deleteIntervention

@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { makeWorld, run, api, PAGE } from './fake-notion.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const SRC = ['Code.gs', 'Report.gs', 'Auth.gs', 'Methods.gs', 'Machines.gs', 'Racks Casiers.gs', 'Actions.gs'].map((f) => fs.readFileSync(path.join(here, '..', f), 'utf8'));
+const SRC = ['Code.gs', 'Report.gs', 'Auth.gs', 'Methods.gs', 'Machines.gs', 'Racks Casiers.gs', 'Actions.gs', 'Summary.gs'].map((f) => fs.readFileSync(path.join(here, '..', f), 'utf8'));
 const t = (s) => [{ plain_text: s }];
 
 function seed() {
@@ -65,6 +65,22 @@ test('actionComment : refus (action non liée, état inconnu, vide, auteur manqu
   assert.equal(post({ ...ok, id: 'c', state: '', text: ' ' }).error.code, 'BAD_REQUEST');
   assert.equal(post({ ...ok, id: 'd', name: '' }).error.code, 'AUTHOR_REQUIRED');
   assert.equal(w.comments.length, 0);
+});
+
+test('getActions : état et commentaires de tous les techniciens, filtrés sur la fiche', () => {
+  const { w, action } = seed(); const { get, post } = api(w);
+  const mk = (id, state, text) => post({ action: 'actionComment', id, missionId: PAGE, pageId: action.nid, reference: 'FI-252', name: 'Romane Perez', state, text });
+  assert.equal(mk('c1', 'doing', 'Début').ok, true);
+  assert.equal(mk('c2', 'done', 'Pas d\u2019amorces de rupture\nRAS').ok, true);
+  assert.equal(mk('c3', '', 'Remarque après coup').ok, true);
+  w.addNotionComment(action.nid, '[Autre] État : Terminée · FI-999\nautre fiche');
+  w.addNotionComment(action.nid, 'commentaire libre sans format');
+  const r = get({ action: 'getActions', id: 'FI-252' });
+  assert.equal(r.ok, true, JSON.stringify(r));
+  const e = r.data.actions[0].entries;
+  assert.deepEqual(e.map((x) => [x.by, x.state, x.text]), [
+    ['Romane Perez', 'doing', 'Début'], ['Romane Perez', 'done', 'Pas d\u2019amorces de rupture\nRAS'], ['Romane Perez', '', 'Remarque après coup']]);
+  assert.equal(get({ action: 'getIntervention', id: 'FI-252' }).data.actions[0].entries.length, 3);
 });
 
 test('missionMedia : fichier d’une action liée servi si `mission` est fourni et cohérent', () => {

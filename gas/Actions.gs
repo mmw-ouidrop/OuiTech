@@ -27,6 +27,43 @@ const ACTION_STATES = {
   blocked: 'Impossible'
 };
 
+// « [Prénom Nom] État : Terminée · FI-313\ntexte » ou « [Prénom Nom] Commentaire · FI-313\ntexte » (voir postActionComment_).
+function parseActionComment_(text) {
+  const m = String(text || '').replace(/\r/g, '').match(/^\[([^\]]{1,80})\]\s*(?:État\s*:\s*([^\n·]+?)|Commentaire)\s*(?:·\s*([^\n]+?))?\s*(?:\n([\s\S]*))?$/);
+  if (!m) return null;
+  let state = '';
+  if (m[2]) {
+    const label = propKey_(m[2]);
+    Object.keys(ACTION_STATES).forEach(function (k) { if (propKey_(ACTION_STATES[k]) === label) state = k; });
+    if (!state) return null;
+  }
+  return { by: m[1].trim(), state: state, ref: (m[3] || '').trim(), text: (m[4] || '').trim() };
+}
+
+// Historique d'une action : commentaires déposés par l'application (tous techniciens), du plus ancien au plus récent.
+function readActionEntries_(actionId, reference) {
+  const out = [];
+  let cursor = null;
+  for (let n = 0; n < 3; n++) {
+    let res;
+    try {
+      res = notion_('GET', '/comments?block_id=' + actionId + '&page_size=100' + (cursor ? '&start_cursor=' + encodeURIComponent(cursor) : ''));
+    } catch (err) {
+      throw commentsForbidden_(err);
+    }
+    (res.results || []).forEach(function (cm) {
+      const e = parseActionComment_(plain_(cm.rich_text));
+      if (!e) return;
+      if (e.ref && reference && propKey_(e.ref) !== propKey_(reference)) return;
+      out.push({ id: cm.id, by: e.by, state: e.state, text: e.text, at: new Date(cm.created_time).getTime() || 0 });
+    });
+    if (!res.has_more) break;
+    cursor = res.next_cursor;
+  }
+  out.sort(function (a, b) { return a.at - b.at; });
+  return out.slice(-50);
+}
+
 function actionsCfg_() {
   return {
     rel:    cfg_('ACTIONS_PROP_NAME', 'Actions prévues'),
@@ -60,7 +97,7 @@ function relationIdsOf_(page, cfg) {
   return prop && prop.type === 'relation' ? (prop.relation || []).map(function (r) { return plainId_(r.id); }) : [];
 }
 
-function readActionPage_(ap, cfg, budget) {
+function readActionPage_(ap, cfg, budget, entries) {
   const text = function (wanted) {
     const n = findProp_(ap, wanted);
     return n ? textOfProp_(ap.properties[n]) : '';
@@ -91,6 +128,7 @@ function readActionPage_(ap, cfg, budget) {
     tools: text(cfg.tools),
     files: files,
     links: links,
+    entries: entries || [],
     url: ap.url || ''
   };
 }
@@ -100,12 +138,22 @@ function readActions_(page, warnings) {
   const cfg = actionsCfg_();
   const ids = relationIdsOf_(page, cfg).slice(0, ACTIONS_MAX);
   const budget = { left: 40 };
+  const reference = referenceOf_(page, '');
   const out = [];
+  let commentsWarned = false;
   ids.forEach(function (id) {
     try {
       const ap = notion_('GET', '/pages/' + id);
       if (ap.archived || ap.in_trash) return;
-      out.push(readActionPage_(ap, cfg, budget));
+      let entries = [];
+      try {
+        entries = readActionEntries_(plainId_(ap.id), reference);
+      } catch (err) {
+        if (!(err instanceof ApiError_)) throw err;
+        if (!commentsWarned) warnings.push({ code: 'ACTION_COMMENTS_UNREADABLE', message: err.message });
+        commentsWarned = true;
+      }
+      out.push(readActionPage_(ap, cfg, budget, entries));
     } catch (err) {
       if (!(err instanceof ApiError_)) throw err;
       warnings.push({ code: 'ACTION_UNREADABLE', message: 'Une action liée n’a pas pu être lue (' + err.message + ')' });
@@ -147,8 +195,19 @@ function postActionComment_(body) {
     if (text) msg += '\n' + text;
     createNotionComment_(actionId, msg);
     if (dedupe) cache.put(dedupe, '1', SYNC_CACHE_SECONDS);
+    // La colonne « Compte rendu » de la fiche reprend aussitôt l'état et le commentaire (jamais bloquant).
+    let st = null;
+    try { st = loadState_(missionId); } catch (err) { st = emptyState_(); }
+    writePageSummarySafe_(missionId, st, { forceActions: true, reference: ref });
     return { duplicate: false, state: state, label: state ? ACTION_STATES[state] : '' };
   } finally {
     lock.releaseLock();
   }
+}
+
+// Actions seules (état et commentaires de tous les techniciens), pour rafraîchir l'écran sans relire tout le template.
+function getActions_(p) {
+  const page = findPageByReference_(p.id);
+  const warnings = [];
+  return { actions: readActions_(page, warnings), warnings: warnings };
 }

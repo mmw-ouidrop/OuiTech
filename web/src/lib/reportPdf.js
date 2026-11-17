@@ -2,7 +2,7 @@
 import { buildItems, fieldValue } from './shared.js'
 import { formatFieldValue, formatPropertyValue, isEmptyProperty } from './format.js'
 import { kindOf, sizeLabel } from './attachments.js'
-import { stateLabel, currentState } from './actions.js'
+import { stateLabel, currentState, mergeEntries } from './actions.js'
 
 // → { sections: [{ id, level, text, fields: [...] }] } ; les champs hors section sont dans une section sans titre.
 // field : { id, label, type, text, photos: [{ mediaId, kind, fileName, size, row? }], remote: n }
@@ -37,7 +37,7 @@ export function buildReport(rec, rows = []) {
     title: rec.title || rec.reference,
     props: (rec.readOnlyData || []).filter((p) => !isEmptyProperty(p)).map((p) => ({ label: p.label, text: formatPropertyValue(p) })),
     actions: (rec.actions || []).map((a) => {
-      const log = (rec.actionLog && rec.actionLog[a.id]) || []
+      const log = mergeEntries(a.entries, rec.actionLog && rec.actionLog[a.id])
       return { id: a.id, title: a.title, type: a.type, time: a.time, state: stateLabel(currentState(log)) || 'Sans état', entries: log.map((e) => ({ state: stateLabel(e.state), text: e.text, by: e.by, at: e.at })) }
     }),
     sections: sections.filter((s) => s.text || s.fields.length)
